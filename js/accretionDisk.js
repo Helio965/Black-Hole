@@ -106,19 +106,20 @@ function createStreakGeometry({ count, innerRadius, outerRadius, seed }) {
     // More matter close to the hole: squash a uniform sample towards 0.
     const radius = innerRadius + (outerRadius - innerRadius) * Math.pow(random(), 1.5);
 
-    orbit[i * 4 + 0] = radius;
-    orbit[i * 4 + 1] = random() * Math.PI * 2;
-    orbit[i * 4 + 2] = gaussian(random);
-    orbit[i * 4 + 3] = random();
-
     // Brightness: steep radial fall-off, concentric bands and a few hot spots.
     const radial = Math.pow(innerRadius / radius, 1.4);
-    const bands = 0.6 + 0.4 * Math.sin(radius * 4.1 + 1.3 * Math.sin(radius * 1.7));
+    const wave = 0.5 + 0.5 * Math.sin(radius * 4.1 + 1.3 * Math.sin(radius * 1.7));
+    const bands = 0.15 + 0.85 * wave * wave;
     const spark = 0.35 + 0.65 * Math.pow(random(), 2);
     const innerEdge = THREE.MathUtils.smoothstep(radius, innerRadius, innerRadius + 0.35);
 
-    look[i * 4 + 0] = (0.1 + 0.3 * random()) * (0.75 + 0.25 * Math.sqrt(innerRadius / radius));
-    look[i * 4 + 1] = (0.025 + 0.055 * random()) * (0.6 + 0.05 * radius);
+    orbit[i * 4 + 0] = radius;
+    orbit[i * 4 + 1] = random() * Math.PI * 2;
+    orbit[i * 4 + 2] = gaussian(random);
+    orbit[i * 4 + 3] = bands * spark; // relative glow: dimmer streaks are also cooler
+
+    look[i * 4 + 0] = (0.12 + 0.33 * random()) * (0.75 + 0.25 * Math.sqrt(innerRadius / radius));
+    look[i * 4 + 1] = (0.018 + 0.042 * random()) * (0.6 + 0.05 * radius);
     look[i * 4 + 2] = DISK_EXPOSURE * radial * bands * spark * (0.25 + 0.75 * innerEdge);
     look[i * 4 + 3] = 0.94 + 0.12 * random();
   }

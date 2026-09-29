@@ -327,8 +327,13 @@ body {
 
 @media (max-width: 480px) {
   .hud {
-    width: 208px;
+    width: 232px;
     padding: 12px 14px;
+  }
+
+  .hud__subtitle {
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
   }
 
   .hint {

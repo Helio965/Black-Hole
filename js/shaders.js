@@ -38,24 +38,28 @@ export const photonRingFragment = /* glsl */ `
     float edge = asin(min(uShadowRadius / vDistance, 0.999));
     float x = angle / edge; // 1.0 exactly on the silhouette of the shadow
 
-    if (x < 1.0) discard; // the shadow itself stays absolutely black
+    // Soft inner edge instead of a hard cut: it covers the (aliased) outline of
+    // the sphere even without MSAA, while the shadow itself stays pure black.
+    float inside = smoothstep(0.955, 0.995, x);
+    if (inside <= 0.0) discard;
 
     float d = x - 1.0;
+    float outside = max(d, 0.0);
     float ring = exp(-pow(d / 0.022, 2.0)); // razor-thin photon ring
-    float inner = exp(-d * 9.0);            // hot glow hugging the edge
-    float halo = exp(-d * 2.2);             // wide and soft aura
+    float inner = exp(-outside * 9.0);      // hot glow hugging the edge
+    float halo = exp(-outside * 4.5);       // soft aura, kept short so the sky stays black
 
     // Side of the ring that moves towards the camera looks brighter.
     vec2 dir = vOffset / max(rho, 1e-5);
     float approach = uSpin.x * dir.y - uSpin.y * dir.x; // (L x e).z
     float beaming = max(1.0 + uDoppler * 0.8 * approach, 0.0);
 
-    vec3 color = vec3(1.0, 0.96, 0.86) * ring * 2.4
-               + vec3(1.0, 0.70, 0.28) * inner * 0.9
-               + vec3(0.95, 0.30, 0.06) * halo * 0.22;
+    vec3 color = vec3(1.0, 0.94, 0.82) * ring * 1.6
+               + vec3(1.0, 0.66, 0.26) * inner * 0.5
+               + vec3(0.95, 0.30, 0.06) * halo * 0.06;
 
     float fade = 1.0 - smoothstep(0.7, 1.0, rho / uSize);
-    gl_FragColor = vec4(color * beaming * uIntensity * fade, 1.0);
+    gl_FragColor = vec4(color * beaming * uIntensity * fade * inside, 1.0);
   }
 `;
 
@@ -140,8 +144,14 @@ export const noiseChunk = /* glsl */ `
 //
 //   θ+ : primary image, pushed outwards, beyond the Einstein ring
 //        -> the far side of the disc is lifted over the top of the shadow.
-//   θ- : secondary image, flipped to the opposite side, inside the ring
-//        -> the thin arc that wraps under the shadow.
+//   θ- : secondary image, on the opposite side of the hole
+//        -> the arc that wraps under the shadow.
+//
+// The weak-field θ- would hide most of the secondary image inside the shadow.
+// Close to a real black hole (strong field) it hugs the shadow instead, so the
+// secondary image is drawn as a compressed mirror of the primary one, weighted
+// by the point-lens magnification μ- (see lensMagnification). Artistic, but it
+// reproduces the look of the classic renders.
 //
 // Every vertex is lensed on its own, so streaks bend and stretch naturally.
 // Surface brightness is conserved by lensing, so colours are left untouched.
@@ -149,6 +159,9 @@ export const noiseChunk = /* glsl */ `
 
 export const lensChunk = /* glsl */ `
   uniform float uLensStrength; // 0 = no lensing, 1 = weak-field point lens (Rs = 1)
+  uniform float uShadowRadius; // radius of the black sphere, in world units
+
+  const float SECONDARY_SQUASH = 0.6;
 
   vec3 gravitationalLens(vec3 p, vec3 hole, float imageSign) {
     float Dl = -hole.z; // camera -> hole
@@ -165,7 +178,14 @@ export const lensChunk = /* glsl */ `
     vec2 beta = p.xy / Ds - holeDir;
     float b = length(beta);
     float thetaE2 = uLensStrength * 2.0 * Dls / (Dl * Ds);
-    float theta = 0.5 * (b + imageSign * sqrt(b * b + 4.0 * thetaE2));
+    float theta = 0.5 * (b + sqrt(b * b + 4.0 * thetaE2)); // primary image
+
+    if (imageSign < 0.0) {
+      // Compressed mirror of the primary image, starting at the shadow's edge.
+      float thetaShadow = uShadowRadius / sqrt(max(Dl * Dl - uShadowRadius * uShadowRadius, 1e-4));
+      theta = -(thetaShadow + SECONDARY_SQUASH * (theta - thetaShadow));
+    }
+
     vec2 dir = b > 1e-6 ? beta / b : vec2(0.0, 1.0);
 
     return vec3((holeDir + dir * theta) * Ds, p.z);
@@ -207,7 +227,7 @@ export const diskVertex = /* glsl */ `
   uniform float uOuterRadius;
   uniform float uImageSign;       // +1 primary image, -1 secondary image
 
-  attribute vec4 aOrbit; // x: radius, y: start angle, z: vertical offset, w: random seed
+  attribute vec4 aOrbit; // x: radius, y: start angle, z: vertical offset, w: relative glow
   attribute vec4 aLook;  // x: trail length (rad), y: width, z: brightness, w: speed jitter
 
   varying vec3 vColor;
@@ -215,12 +235,12 @@ export const diskVertex = /* glsl */ `
 
   // Temperature ramp: dark red -> red -> orange -> yellow -> white.
   vec3 heatColor(float t) {
-    vec3 c = mix(vec3(0.16, 0.012, 0.012), vec3(0.72, 0.075, 0.02), smoothstep(0.0, 0.25, t));
-    c = mix(c, vec3(1.0, 0.34, 0.05), smoothstep(0.2, 0.5, t));
-    c = mix(c, vec3(1.0, 0.70, 0.24), smoothstep(0.45, 0.78, t));
-    c = mix(c, vec3(1.0, 0.94, 0.78), smoothstep(0.78, 1.0, t));
+    vec3 c = mix(vec3(0.22, 0.025, 0.01), vec3(0.78, 0.11, 0.02), smoothstep(0.0, 0.25, t));
+    c = mix(c, vec3(1.0, 0.36, 0.05), smoothstep(0.22, 0.55, t));
+    c = mix(c, vec3(1.0, 0.6, 0.16), smoothstep(0.5, 0.85, t));
+    c = mix(c, vec3(1.0, 0.86, 0.55), smoothstep(0.85, 1.0, t));
     // A faint cold tint on the very outskirts of the disc.
-    c = mix(c, vec3(0.22, 0.2, 0.42), (1.0 - smoothstep(0.0, 0.1, t)) * 0.35);
+    c = mix(c, vec3(0.25, 0.2, 0.4), (1.0 - smoothstep(0.0, 0.08, t)) * 0.18);
     return c;
   }
 
@@ -241,9 +261,9 @@ export const diskVertex = /* glsl */ `
     // --- Turbulence ---------------------------------------------------------
     // A slowly drifting noise field lifts the streaks out of the plane and
     // makes them slightly wavy.
-    float thickness = 0.035 + 0.02 * radius;
+    float thickness = 0.025 + 0.014 * radius;
     float turbulence = snoise(vec3(local.xz * 0.23, uFlowTime * 0.15));
-    local.y = (aOrbit.z * 0.6 + turbulence) * thickness;
+    local.y = (aOrbit.z * 0.55 + 0.8 * turbulence) * thickness;
     local.xz *= 1.0 + 0.012 * turbulence;
 
     vec3 world = (modelMatrix * vec4(local, 1.0)).xyz;
@@ -260,6 +280,8 @@ export const diskVertex = /* glsl */ `
     // The hole sits at the world origin.
     vec4 view = viewMatrix * vec4(world, 1.0);
     vec3 hole = (viewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    // The secondary image only shows up where the lens really produces one.
+    float imageWeight = uImageSign > 0.0 ? 1.0 : clamp(lensMagnification(view.xyz, hole, -1.0), 0.0, 1.0);
     view.xyz = gravitationalLens(view.xyz, hole, uImageSign);
     gl_Position = projectionMatrix * view;
 
@@ -273,9 +295,10 @@ export const diskVertex = /* glsl */ `
     float beaming = delta * delta * delta;
 
     float heat = pow(clamp((uOuterRadius - radius) / (uOuterRadius - uInnerRadius), 0.0, 1.0), 1.35);
-    heat = clamp(heat * mix(1.0, delta, 0.7), 0.0, 1.0);
+    heat *= mix(0.55, 1.0, aOrbit.w);                 // dimmer streaks are cooler (redder)
+    heat = clamp(heat * mix(1.0, delta, 0.7), 0.0, 1.0); // Doppler: approaching side is hotter
 
-    vColor = heatColor(heat) * aLook.z * beaming * uIntensity * uBrightnessScale;
+    vColor = heatColor(heat) * aLook.z * beaming * imageWeight * uIntensity * uBrightnessScale;
     vStrip = vec2(along, side);
   }
 `;
@@ -291,7 +314,10 @@ export const diskFragment = /* glsl */ `
     float head = smoothstep(0.0, 0.1, strip.x); // soft leading edge
     float tail = pow(1.0 - strip.x, 1.4);       // fading comet-like tail
     float core = 1.0 - strip.y * strip.y;       // bright centre line
-    gl_FragColor = vec4(vColor, head * tail * core * core);
+
+    // The tail cools down as it fades: dimmer means redder, like a black body.
+    vec3 color = vColor * mix(vec3(1.0, 0.42, 0.22), vec3(1.0), tail);
+    gl_FragColor = vec4(color, head * tail * core * core);
   }
 `;
 

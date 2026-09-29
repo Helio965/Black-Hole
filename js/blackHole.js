@@ -35,6 +35,8 @@ export function createBlackHole({ shadowRadius }) {
       fragmentShader: photonRingFragment,
       transparent: true,
       depthWrite: false,
+      // Drawn over the sphere's outline; the shader itself keeps the inside black.
+      depthTest: false,
       blending: THREE.AdditiveBlending,
     }),
   );

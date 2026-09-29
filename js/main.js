@@ -21,8 +21,8 @@ const DISK_INNER_RADIUS = 3; // innermost stable circular orbit (ISCO)
 const DISK_OUTER_RADIUS = 16;
 
 const CAMERA_FOV = 38;
-const CAMERA_ELEVATION = THREE.MathUtils.degToRad(7); // almost edge-on, like the reference
-const BLOOM = { strength: 0.55, radius: 0.25, threshold: 0.7 };
+const CAMERA_ELEVATION = THREE.MathUtils.degToRad(2.2); // almost edge-on, like the reference
+const BLOOM = { strength: 0.32, radius: 0.1, threshold: 0.85 };
 const MIN_DISTANCE = 9;
 const MAX_DISTANCE = 110;
 
@@ -46,7 +46,7 @@ function createRenderer(target) {
     instance.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     instance.setSize(window.innerWidth, window.innerHeight, false);
     instance.setClearColor(0x000000, 1);
-    instance.toneMapping = THREE.ACESFilmicToneMapping;
+    instance.toneMapping = THREE.NeutralToneMapping; // keeps the oranges saturated
     instance.toneMappingExposure = 1.0;
     return instance;
   } catch (error) {
@@ -61,8 +61,8 @@ function idealDistance(aspect) {
   const halfVertical = THREE.MathUtils.degToRad(CAMERA_FOV / 2);
   const halfHorizontal = Math.atan(Math.tan(halfVertical) * aspect);
   // Wide screens show the whole disc; tall screens at least the lensed core.
-  const halfWidthToFit = aspect >= 1 ? 17.5 : 10.5;
-  return THREE.MathUtils.clamp(halfWidthToFit / Math.tan(halfHorizontal), 34, 72);
+  const halfWidthToFit = aspect >= 1 ? 14.5 : 9;
+  return THREE.MathUtils.clamp(halfWidthToFit / Math.tan(halfHorizontal), 24, 64);
 }
 
 function homePosition(aspect, target = new THREE.Vector3()) {
@@ -97,12 +97,27 @@ function start(renderer) {
 
   const cameraReset = createCameraReset(camera, controls);
 
+  // --- Settings (driven by the controls panel) ---------------------------------
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  const settings = {
+    speed: prefersReducedMotion ? 0.35 : 1,
+    intensity: 1,
+    particles: 1, // fraction of the particle budget
+    tilt: 0, // degrees
+    lens: 1.3, // 1 = weak-field point lens; a bit more looks closer to strong-field renders
+    doppler: 0.6,
+    stars: true,
+  };
+
   // --- Objects ----------------------------------------------------------------
   const blackHole = createBlackHole({ shadowRadius: SHADOW_RADIUS });
   scene.add(blackHole.group);
 
   // Shared by every material that bends light around the hole.
-  const lensUniforms = { uLensStrength: { value: 1 } };
+  const lensUniforms = {
+    uLensStrength: { value: settings.lens },
+    uShadowRadius: { value: SHADOW_RADIUS },
+  };
 
   const disk = createAccretionDisk({
     count: quality.particles,
@@ -114,18 +129,6 @@ function start(renderer) {
 
   const stars = createStarfield({ count: quality.stars, lensUniforms });
   scene.add(stars.points);
-
-  // --- Settings (driven by the controls panel) ---------------------------------
-  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-  const settings = {
-    speed: prefersReducedMotion ? 0.35 : 1,
-    intensity: 1,
-    particles: 1, // fraction of the particle budget
-    tilt: 0, // degrees
-    lens: 1,
-    doppler: 0.6,
-    stars: true,
-  };
 
   // The adaptive governor may shrink the budget; the UI picks a fraction of it.
   let particleBudget = quality.particles;
@@ -163,6 +166,8 @@ function start(renderer) {
   composer.addPass(new RenderPass(scene, camera));
   // Only the hottest (HDR > threshold) parts of the scene glow.
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
+  // Favour the small blur levels: a tight glow instead of a wide haze.
+  bloom.compositeMaterial.uniforms.bloomFactors.value = [1.0, 0.7, 0.35, 0.12, 0.04];
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   const bloomMask = keepShadowBlack(bloom);
