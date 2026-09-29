@@ -1,6 +1,13 @@
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
 import { createBlackHole } from './blackHole.js';
 import { createAccretionDisk } from './accretionDisk.js';
+import { bloomBlendFragment } from './shaders.js';
 
 // ---------------------------------------------------------------------------
 // Scene units: 1 unit = 1 Schwarzschild radius (Rs).
@@ -10,9 +17,13 @@ const SHADOW_RADIUS = 2.6; // ~3√3/2 Rs: apparent size of the shadow
 const DISK_INNER_RADIUS = 3; // innermost stable circular orbit (ISCO)
 const DISK_OUTER_RADIUS = 16;
 const PARTICLE_COUNT = 60000;
+
 const MAX_PIXEL_RATIO = 2;
 const CAMERA_FOV = 38;
-const CAMERA_START = new THREE.Vector3(0, 4.2, 34);
+const CAMERA_ELEVATION = THREE.MathUtils.degToRad(7); // almost edge-on, like the reference
+const BLOOM = { strength: 0.55, radius: 0.25, threshold: 0.7 };
+const MIN_DISTANCE = 9;
+const MAX_DISTANCE = 110;
 
 const canvas = document.getElementById('scene');
 const renderer = createRenderer(canvas);
@@ -25,7 +36,7 @@ function createRenderer(target) {
   try {
     const instance = new THREE.WebGLRenderer({
       canvas: target,
-      antialias: true,
+      antialias: false, // the composer renders into its own multisampled target
       powerPreference: 'high-performance',
     });
     instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
@@ -41,6 +52,20 @@ function createRenderer(target) {
   }
 }
 
+/** Distance that keeps the disc nicely framed for a given aspect ratio. */
+function idealDistance(aspect) {
+  const halfVertical = THREE.MathUtils.degToRad(CAMERA_FOV / 2);
+  const halfHorizontal = Math.atan(Math.tan(halfVertical) * aspect);
+  // Wide screens show the whole disc; tall screens at least the lensed core.
+  const halfWidthToFit = aspect >= 1 ? 17.5 : 10.5;
+  return THREE.MathUtils.clamp(halfWidthToFit / Math.tan(halfHorizontal), 34, 72);
+}
+
+function homePosition(aspect, target = new THREE.Vector3()) {
+  const distance = idealDistance(aspect);
+  return target.set(0, Math.sin(CAMERA_ELEVATION), Math.cos(CAMERA_ELEVATION)).multiplyScalar(distance);
+}
+
 function start(renderer) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -51,9 +76,24 @@ function start(renderer) {
     0.1,
     3000,
   );
-  camera.position.copy(CAMERA_START);
+  homePosition(camera.aspect, camera.position);
   camera.lookAt(0, 0, 0);
 
+  // --- Camera controls ------------------------------------------------------
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.enablePan = false; // the hole always stays at the centre
+  controls.minDistance = MIN_DISTANCE; // never fall into the hole
+  controls.maxDistance = MAX_DISTANCE;
+  controls.rotateSpeed = 0.6;
+  controls.zoomSpeed = 0.8;
+  controls.target.set(0, 0, 0);
+  controls.update();
+
+  const cameraReset = createCameraReset(camera, controls);
+
+  // --- Objects ----------------------------------------------------------------
   const blackHole = createBlackHole({ shadowRadius: SHADOW_RADIUS });
   scene.add(blackHole.group);
 
@@ -72,6 +112,19 @@ function start(renderer) {
     speed: 1,
   };
 
+  // --- Post-processing ----------------------------------------------------------
+  const renderTarget = new THREE.WebGLRenderTarget(1, 1, {
+    type: THREE.HalfFloatType,
+    samples: 4,
+  });
+  const composer = new EffectComposer(renderer, renderTarget);
+  composer.addPass(new RenderPass(scene, camera));
+  // Only the hottest (HDR > threshold) parts of the scene glow.
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), BLOOM.strength, BLOOM.radius, BLOOM.threshold);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+  const bloomMask = keepShadowBlack(bloom);
+
   // Angular momentum of the disc seen from the camera: the photon ring uses it
   // to know which side is moving towards us.
   const spinWorld = new THREE.Vector3();
@@ -82,16 +135,36 @@ function start(renderer) {
     blackHole.setSpin(spinView);
   }
 
+  // Where the shadow is on screen, for the bloom mask.
+  const holeScreen = new THREE.Vector3();
+  function updateBloomMask() {
+    holeScreen.set(0, 0, 0).project(camera);
+    bloomMask.uHoleCenter.value.set(holeScreen.x * 0.5 + 0.5, holeScreen.y * 0.5 + 0.5);
+    const distance = camera.position.length();
+    const angularRadius = Math.asin(Math.min(SHADOW_RADIUS / distance, 0.999));
+    const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+    bloomMask.uHoleRadius.value = (0.5 * Math.tan(angularRadius)) / Math.tan(halfFov);
+    bloomMask.uAspect.value = camera.aspect;
+  }
+
+  // --- Responsiveness -----------------------------------------------------------
   function onResize() {
     const width = window.innerWidth;
     const height = window.innerHeight;
+    const pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+
+    renderer.setPixelRatio(pixelRatio);
     renderer.setSize(width, height, false);
+    composer.setPixelRatio(pixelRatio);
+    composer.setSize(width, height);
   }
   window.addEventListener('resize', onResize);
+  onResize();
 
+  // --- Animation loop -------------------------------------------------------------
   const clock = new THREE.Clock();
   let orbitTime = 0;
   let flowTime = 0;
@@ -107,11 +180,68 @@ function start(renderer) {
     flowTime += delta * (0.35 + 0.65 * settings.speed);
     disk.update(orbitTime, flowTime);
 
+    cameraReset.update(delta);
+    controls.update();
     camera.updateMatrixWorld();
     updateSpin();
-    renderer.render(scene, camera);
+    updateBloomMask();
+
+    composer.render(delta);
   }
 
   frame();
   canvas.classList.add('is-ready');
+}
+
+/**
+ * UnrealBloomPass adds its glow over the whole frame, which slowly fills the
+ * shadow with light. Swap its final blend shader for one that fades the glow
+ * out inside the silhouette of the hole, so the centre stays absolutely black.
+ * (blendMaterial shares the copyUniforms object, so new uniforms go there.)
+ */
+function keepShadowBlack(bloom) {
+  const uniforms = bloom.copyUniforms;
+  uniforms.uHoleCenter = { value: new THREE.Vector2(0.5, 0.5) };
+  uniforms.uHoleRadius = { value: 0 };
+  uniforms.uAspect = { value: 1 };
+  bloom.blendMaterial.fragmentShader = bloomBlendFragment;
+  bloom.blendMaterial.needsUpdate = true;
+  return uniforms;
+}
+
+/**
+ * Smoothly flies the camera back to its home position. Interpolating in
+ * spherical coordinates keeps it on a nice arc around the hole instead of
+ * cutting straight through it.
+ */
+function createCameraReset(camera, controls) {
+  const from = new THREE.Spherical();
+  const to = new THREE.Spherical();
+  const home = new THREE.Vector3();
+  const DURATION = 1.4;
+  let elapsed = -1;
+
+  return {
+    start() {
+      from.setFromVector3(camera.position);
+      to.setFromVector3(homePosition(camera.aspect, home));
+      // Take the short way around.
+      const turn = to.theta - from.theta;
+      to.theta = from.theta + Math.atan2(Math.sin(turn), Math.cos(turn));
+      elapsed = 0;
+    },
+    update(delta) {
+      if (elapsed < 0) return;
+      elapsed = Math.min(elapsed + delta, DURATION);
+      const t = elapsed / DURATION;
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      camera.position.setFromSphericalCoords(
+        THREE.MathUtils.lerp(from.radius, to.radius, ease),
+        THREE.MathUtils.lerp(from.phi, to.phi, ease),
+        THREE.MathUtils.lerp(from.theta, to.theta, ease),
+      );
+      camera.lookAt(controls.target);
+      if (elapsed >= DURATION) elapsed = -1;
+    },
+  };
 }

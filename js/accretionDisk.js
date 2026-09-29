@@ -4,6 +4,7 @@ import { diskVertex, diskFragment } from './shaders.js';
 const TRAIL_SEGMENTS = 6;      // vertices along each streak (enough to bend it smoothly)
 const KEPLER = 7.5;            // ω = KEPLER / r^1.5 (rad per second at speed 1)
 const REFERENCE_COUNT = 60000; // brightness is tuned for this many streaks
+const DISK_EXPOSURE = 0.5;     // overall brightness of a single streak (HDR units)
 
 /**
  * Accretion disc made of thousands of luminous streaks.
@@ -102,7 +103,7 @@ function createStreakGeometry({ count, innerRadius, outerRadius, seed }) {
 
   for (let i = 0; i < count; i++) {
     // More matter close to the hole: squash a uniform sample towards 0.
-    const radius = innerRadius + (outerRadius - innerRadius) * Math.pow(random(), 1.9);
+    const radius = innerRadius + (outerRadius - innerRadius) * Math.pow(random(), 1.5);
 
     orbit[i * 4 + 0] = radius;
     orbit[i * 4 + 1] = random() * Math.PI * 2;
@@ -110,14 +111,14 @@ function createStreakGeometry({ count, innerRadius, outerRadius, seed }) {
     orbit[i * 4 + 3] = random();
 
     // Brightness: steep radial fall-off, concentric bands and a few hot spots.
-    const radial = Math.pow(innerRadius / radius, 1.7);
+    const radial = Math.pow(innerRadius / radius, 1.4);
     const bands = 0.6 + 0.4 * Math.sin(radius * 4.1 + 1.3 * Math.sin(radius * 1.7));
     const spark = 0.35 + 0.65 * Math.pow(random(), 2);
     const innerEdge = THREE.MathUtils.smoothstep(radius, innerRadius, innerRadius + 0.35);
 
     look[i * 4 + 0] = (0.1 + 0.3 * random()) * (0.75 + 0.25 * Math.sqrt(innerRadius / radius));
     look[i * 4 + 1] = (0.025 + 0.055 * random()) * (0.6 + 0.05 * radius);
-    look[i * 4 + 2] = radial * bands * spark * (0.25 + 0.75 * innerEdge);
+    look[i * 4 + 2] = DISK_EXPOSURE * radial * bands * spark * (0.25 + 0.75 * innerEdge);
     look[i * 4 + 3] = 0.94 + 0.12 * random();
   }
 

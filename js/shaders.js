@@ -271,9 +271,35 @@ export const diskFragment = /* glsl */ `
   varying vec2 vStrip;
 
   void main() {
-    float head = smoothstep(0.0, 0.1, vStrip.x);  // soft leading edge
-    float tail = pow(1.0 - vStrip.x, 1.4);        // fading comet-like tail
-    float core = 1.0 - vStrip.y * vStrip.y;       // bright centre line
+    // Interpolated varyings can overshoot [0, 1] by a hair: clamp before pow()
+    // so no NaN reaches the (floating point) bloom buffers.
+    vec2 strip = clamp(vStrip, vec2(0.0, -1.0), vec2(1.0, 1.0));
+    float head = smoothstep(0.0, 0.1, strip.x); // soft leading edge
+    float tail = pow(1.0 - strip.x, 1.4);       // fading comet-like tail
+    float core = 1.0 - strip.y * strip.y;       // bright centre line
     gl_FragColor = vec4(vColor, head * tail * core * core);
+  }
+`;
+
+// ---------------------------------------------------------------------------
+// Bloom blend with a "shadow mask"
+// Replaces the final additive blend of UnrealBloomPass: the glow fades out
+// inside the silhouette of the hole, so bloom never fills the shadow with light.
+// ---------------------------------------------------------------------------
+
+export const bloomBlendFragment = /* glsl */ `
+  uniform sampler2D tDiffuse;
+  uniform float opacity;
+  uniform vec2 uHoleCenter; // screen uv
+  uniform float uHoleRadius; // fraction of the screen height
+  uniform float uAspect;
+
+  varying vec2 vUv;
+
+  void main() {
+    vec4 glow = texture2D(tDiffuse, vUv);
+    vec2 d = (vUv - uHoleCenter) * vec2(uAspect, 1.0);
+    float mask = smoothstep(uHoleRadius * 0.72, uHoleRadius * 1.02, length(d));
+    gl_FragColor = opacity * glow * mask;
   }
 `;
