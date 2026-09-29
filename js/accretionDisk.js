@@ -13,10 +13,12 @@ const REFERENCE_COUNT = 60000; // brightness is tuned for this many streaks
  * The vertex shader turns those numbers into an orbit, so the CPU only updates
  * a handful of uniforms per frame, no matter how many streaks are drawn.
  */
-export function createAccretionDisk({ count, innerRadius, outerRadius, seed = 1337 }) {
+export function createAccretionDisk({ count, innerRadius, outerRadius, lensUniforms, seed = 1337 }) {
   const geometry = createStreakGeometry({ count, innerRadius, outerRadius, seed });
 
+  // Shared by both lens images (uniform objects are shared by reference).
   const uniforms = {
+    ...lensUniforms,
     uTime: { value: 0 },
     uFlowTime: { value: 0 },
     uIntensity: { value: 1 },
@@ -27,23 +29,27 @@ export function createAccretionDisk({ count, innerRadius, outerRadius, seed = 13
     uOuterRadius: { value: outerRadius },
   };
 
-  const material = new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader: diskVertex,
-    fragmentShader: diskFragment,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide, // streaks are billboards; lensing may also mirror them
-  });
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = 'AccretionDisk';
-  mesh.frustumCulled = false; // real positions only exist on the GPU
-
   const group = new THREE.Group();
-  group.name = 'AccretionDiskGroup';
-  group.add(mesh);
+  group.name = 'AccretionDisk';
+
+  // The same streaks are drawn twice: once where they appear directly
+  // (primary image) and once as the faint mirrored arc produced by light that
+  // goes around the other side of the hole (secondary image).
+  for (const [name, imageSign] of [['PrimaryImage', 1], ['SecondaryImage', -1]]) {
+    const material = new THREE.ShaderMaterial({
+      uniforms: { ...uniforms, uImageSign: { value: imageSign } },
+      vertexShader: diskVertex,
+      fragmentShader: diskFragment,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide, // streaks are billboards; the lens also mirrors them
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = name;
+    mesh.frustumCulled = false; // real positions only exist on the GPU
+    group.add(mesh);
+  }
 
   function setVisibleCount(visible) {
     const n = THREE.MathUtils.clamp(Math.round(visible), 1, count);

@@ -57,10 +57,14 @@ function start(renderer) {
   const blackHole = createBlackHole({ shadowRadius: SHADOW_RADIUS });
   scene.add(blackHole.group);
 
+  // Shared by every material that bends light around the hole.
+  const lensUniforms = { uLensStrength: { value: 1 } };
+
   const disk = createAccretionDisk({
     count: PARTICLE_COUNT,
     innerRadius: DISK_INNER_RADIUS,
     outerRadius: DISK_OUTER_RADIUS,
+    lensUniforms,
   });
   scene.add(disk.group);
 

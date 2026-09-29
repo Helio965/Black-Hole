@@ -131,6 +131,48 @@ export const noiseChunk = /* glsl */ `
 `;
 
 // ---------------------------------------------------------------------------
+// Gravitational lensing (thin point-mass lens, weak-field approximation)
+//
+// Works in view space. For a source point behind the hole, its angular offset
+// from the hole (β) is mapped to the two images predicted by the lens equation:
+//
+//     θ± = ( β ± sqrt(β² + 4·θE²) ) / 2        θE² = 2·Rs·Dls / (Dl·Ds)
+//
+//   θ+ : primary image, pushed outwards, beyond the Einstein ring
+//        -> the far side of the disc is lifted over the top of the shadow.
+//   θ- : secondary image, flipped to the opposite side, inside the ring
+//        -> the thin arc that wraps under the shadow.
+//
+// Every vertex is lensed on its own, so streaks bend and stretch naturally.
+// Surface brightness is conserved by lensing, so colours are left untouched.
+// ---------------------------------------------------------------------------
+
+export const lensChunk = /* glsl */ `
+  uniform float uLensStrength; // 0 = no lensing, 1 = weak-field point lens (Rs = 1)
+
+  vec3 gravitationalLens(vec3 p, vec3 hole, float imageSign) {
+    float Dl = -hole.z; // camera -> hole
+    float Ds = -p.z;    // camera -> source
+    float Dls = Ds - Dl;
+
+    if (Dls <= 0.0) {
+      // In front of the hole nothing is bent. There is no secondary image
+      // either: tuck it right behind the centre, where the shadow hides it.
+      return imageSign > 0.0 ? p : hole * 1.02;
+    }
+
+    vec2 holeDir = hole.xy / Dl;
+    vec2 beta = p.xy / Ds - holeDir;
+    float b = length(beta);
+    float thetaE2 = uLensStrength * 2.0 * Dls / (Dl * Ds);
+    float theta = 0.5 * (b + imageSign * sqrt(b * b + 4.0 * thetaE2));
+    vec2 dir = b > 1e-6 ? beta / b : vec2(0.0, 1.0);
+
+    return vec3((holeDir + dir * theta) * Ds, p.z);
+  }
+`;
+
+// ---------------------------------------------------------------------------
 // Accretion disc
 // Each instance is a short luminous streak. Its whole orbit is computed here,
 // on the GPU, from a handful of per-instance numbers: nothing is updated on the
@@ -139,6 +181,7 @@ export const noiseChunk = /* glsl */ `
 
 export const diskVertex = /* glsl */ `
   ${noiseChunk}
+  ${lensChunk}
 
   uniform float uTime;            // orbital clock, already scaled by the speed control
   uniform float uFlowTime;        // clock for the turbulence field
@@ -148,6 +191,7 @@ export const diskVertex = /* glsl */ `
   uniform float uKepler;
   uniform float uInnerRadius;
   uniform float uOuterRadius;
+  uniform float uImageSign;       // +1 primary image, -1 secondary image
 
   attribute vec4 aOrbit; // x: radius, y: start angle, z: vertical offset, w: random seed
   attribute vec4 aLook;  // x: trail length (rad), y: width, z: brightness, w: speed jitter
@@ -198,7 +242,11 @@ export const diskVertex = /* glsl */ `
     across = acrossLength > 1e-4 ? across / acrossLength : vec3(0.0, 1.0, 0.0);
     world += across * side * aLook.y * (1.0 - 0.6 * along);
 
+    // --- Lensing ------------------------------------------------------------
+    // The hole sits at the world origin.
     vec4 view = viewMatrix * vec4(world, 1.0);
+    vec3 hole = (viewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    view.xyz = gravitationalLens(view.xyz, hole, uImageSign);
     gl_Position = projectionMatrix * view;
 
     // --- Colour -------------------------------------------------------------
