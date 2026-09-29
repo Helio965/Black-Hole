@@ -1,17 +1,19 @@
 /**
- * Quality management: pick sensible defaults for the device, then lower them
- * at runtime if the frame rate stays too low.
+ * Quality management: pick sensible defaults for the GPU the browser is
+ * really using, then lower them at runtime if the frame rate stays too low.
  *
- * `?quality=high` or `?quality=low` in the URL forces a profile and disables
- * the automatic adjustment (useful for screenshots and benchmarks).
+ * `?quality=high|medium|low` in the URL forces a profile and disables the
+ * automatic adjustment (useful for screenshots and benchmarks).
  */
 
 const PROFILES = {
-  high: { name: 'high', particles: 60000, stars: 1800, maxPixelRatio: 2, msaa: 4 },
-  low: { name: 'low', particles: 24000, stars: 1000, maxPixelRatio: 1.5, msaa: 0 },
+  high: { name: 'high', particles: 60000, stars: 1800, maxPixelRatio: 2 },
+  medium: { name: 'medium', particles: 36000, stars: 1400, maxPixelRatio: 1.25 },
+  low: { name: 'low', particles: 20000, stars: 1000, maxPixelRatio: 1.5 },
 };
 
-export function detectQualityProfile() {
+/** @param {{ kind: string }} gpu result of describeGpu() */
+export function detectQualityProfile(gpu) {
   const forced = new URLSearchParams(window.location.search).get('quality');
   if (forced in PROFILES) {
     return { ...PROFILES[forced], adaptive: false };
@@ -19,8 +21,13 @@ export function detectQualityProfile() {
 
   const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
   const smallScreen = Math.min(window.screen.width, window.screen.height) < 820;
-  const profile = coarsePointer && smallScreen ? PROFILES.low : PROFILES.high;
-  return { ...profile, adaptive: true };
+
+  // Rendering on the CPU: keep it as light as possible.
+  if (gpu.kind === 'software') return { ...PROFILES.low, maxPixelRatio: 1, adaptive: true };
+  if (coarsePointer && smallScreen) return { ...PROFILES.low, adaptive: true };
+  // Integrated laptop GPUs share memory bandwidth with the CPU.
+  if (gpu.kind === 'integrated') return { ...PROFILES.medium, adaptive: true };
+  return { ...PROFILES.high, adaptive: true };
 }
 
 /**
@@ -29,9 +36,9 @@ export function detectQualityProfile() {
  */
 export function createFrameRateGovernor({
   targetFps = 45,
-  warmup = 2,
-  sampleWindow = 2.5,
-  maxSteps = 4,
+  warmup = 1.5,
+  sampleWindow = 1.5,
+  maxSteps = 5,
   onDowngrade,
 }) {
   let running = 0;

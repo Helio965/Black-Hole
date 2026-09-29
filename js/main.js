@@ -8,8 +8,9 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createBlackHole } from './blackHole.js';
 import { createAccretionDisk } from './accretionDisk.js';
 import { createStarfield } from './stars.js';
+import { describeGpu } from './gpu.js';
 import { detectQualityProfile, createFrameRateGovernor } from './quality.js';
-import { createControlsPanel, setupHint } from './ui.js';
+import { createControlsPanel, createPerformanceStatus, setupHint } from './ui.js';
 import { bloomBlendFragment } from './shaders.js';
 
 // ---------------------------------------------------------------------------
@@ -26,9 +27,6 @@ const BLOOM = { strength: 0.32, radius: 0.1, threshold: 0.85 };
 const MIN_DISTANCE = 9;
 const MAX_DISTANCE = 110;
 
-const quality = detectQualityProfile();
-let maxPixelRatio = quality.maxPixelRatio; // lowered at runtime if the device struggles
-
 const canvas = document.getElementById('scene');
 const renderer = createRenderer(canvas);
 
@@ -40,10 +38,11 @@ function createRenderer(target) {
   try {
     const instance = new THREE.WebGLRenderer({
       canvas: target,
-      antialias: false, // the composer renders into its own multisampled target
+      antialias: false, // everything goes through the composer's own render target
+      // Ask for the dedicated GPU. It is only a hint: on laptops with two GPUs
+      // the operating system decides (see the README and the in-page help).
       powerPreference: 'high-performance',
     });
-    instance.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     instance.setSize(window.innerWidth, window.innerHeight, false);
     instance.setClearColor(0x000000, 1);
     instance.toneMapping = THREE.NeutralToneMapping; // keeps the oranges saturated
@@ -71,6 +70,11 @@ function homePosition(aspect, target = new THREE.Vector3()) {
 }
 
 function start(renderer) {
+  // Pick the quality from the GPU the browser is really using.
+  const gpu = describeGpu(renderer);
+  const quality = detectQualityProfile(gpu);
+  let maxPixelRatio = quality.maxPixelRatio; // lowered at runtime if the device struggles
+
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
 
@@ -236,11 +240,20 @@ function start(renderer) {
   const clock = new THREE.Clock();
   let orbitTime = 0;
   let flowTime = 0;
+  const fpsMeter = { frames: 0, elapsed: 0 };
 
   function frame() {
     requestAnimationFrame(frame);
     const rawDelta = clock.getDelta();
     if (quality.adaptive) governor.tick(rawDelta);
+
+    fpsMeter.frames += 1;
+    fpsMeter.elapsed += rawDelta;
+    if (fpsMeter.elapsed >= 0.5) {
+      status.setFps(fpsMeter.frames / fpsMeter.elapsed);
+      fpsMeter.frames = 0;
+      fpsMeter.elapsed = 0;
+    }
     // Clamp the delta so a background tab does not produce a huge jump.
     const delta = Math.min(rawDelta, 0.1);
 
@@ -262,6 +275,7 @@ function start(renderer) {
   }
 
   // --- Interface ------------------------------------------------------------------
+  const status = createPerformanceStatus(gpu);
   createControlsPanel({
     values: settings,
     onChange(key, value) {

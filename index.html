@@ -26,6 +26,12 @@
     <header class="hud__header">
       <h1 class="hud__title">BLACK HOLE</h1>
       <p class="hud__subtitle">Interactive WebGL Experiment</p>
+      <p class="hud__gpu" id="gpu-status" data-kind="other">
+        <span class="hud__dot" aria-hidden="true"></span>
+        <span class="hud__gpu-name" id="gpu-name">detectando GPU…</span>
+        <span class="hud__fps" id="fps-value"></span>
+      </p>
+      <button class="hud__link" id="gpu-help-open" type="button" hidden>Está travando? Use a placa de vídeo dedicada</button>
     </header>
 
     <button class="hud__toggle" id="controls-toggle" type="button" aria-expanded="false" aria-controls="controls">
@@ -73,6 +79,34 @@
     </form>
   </aside>
 
+  <section class="gpu-help" id="gpu-help" data-kind="integrated" hidden aria-labelledby="gpu-help-title">
+    <button class="gpu-help__close" id="gpu-help-close" type="button" aria-label="Fechar">×</button>
+    <h2 class="gpu-help__title" id="gpu-help-title">Use a placa de vídeo dedicada</h2>
+    <p class="only-integrated">
+      O navegador está usando <strong class="js-gpu-name">a GPU integrada</strong>. Em notebooks com duas placas
+      de vídeo (por exemplo Intel/AMD + NVIDIA), o Windows costuma entregar a mais fraca ao navegador.
+    </p>
+    <p class="only-software">
+      O navegador está desenhando a cena na <strong>CPU</strong>, sem usar a placa de vídeo, e por isso trava.
+    </p>
+    <ol>
+      <li>No Chrome, em <em>Configurações → Sistema</em>, ligue <em>Usar aceleração de gráficos quando disponível</em>.</li>
+      <li>
+        No Windows, abra <em>Configurações → Sistema → Tela → Elementos gráficos</em>, escolha o
+        <em>Google Chrome</em> → <em>Opções</em> → <em>Alto desempenho</em> (NVIDIA) → <em>Salvar</em>.
+      </li>
+      <li>
+        Ou cole na barra de endereço <code>chrome://flags/#force-high-performance-gpu</code>
+        <button class="gpu-help__copy" type="button" data-copy="chrome://flags/#force-high-performance-gpu">copiar</button>,
+        escolha <em>Enabled</em> e clique em <em>Relaunch</em>.
+      </li>
+      <li>Ligue o notebook na tomada e <strong>feche e abra o navegador de novo</strong>.</li>
+    </ol>
+    <p class="gpu-help__foot">
+      Deu certo quando o painel mostrar a NVIDIA com o ponto verde. No Microsoft Edge, use <code>edge://flags</code>.
+    </p>
+  </section>
+
   <p class="hint" id="hint">Arraste para girar · Role ou use pinça para zoom</p>
 
   <p class="fallback" id="fallback" hidden>
@@ -98,6 +132,7 @@
       document.getElementById('file-notice').hidden = false;
       document.getElementById('hint').hidden = true;
       document.getElementById('controls-toggle').hidden = true;
+      document.getElementById('gpu-status').hidden = true;
     }
   </script>
   <script type="module" src="js/main.js"></script>
