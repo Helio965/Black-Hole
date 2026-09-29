@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Buraco negro 3D interativo com disco de acreção, lente gravitacional aproximada e shaders GLSL em Three.js." />
+  <title>Black Hole · Interactive WebGL Experiment</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='34' rx='30' ry='9' fill='%23ff7a18'/%3E%3Ccircle cx='32' cy='32' r='15' fill='%23ffd27a'/%3E%3Ccircle cx='32' cy='32' r='13' fill='%23000'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!-- Three.js via ES Modules: sem build, sem npm. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="Simulação 3D interativa de um buraco negro"></canvas>
+
+  <p class="fallback" id="fallback" hidden>
+    Seu navegador não conseguiu iniciar o WebGL.<br />
+    Tente um navegador atualizado com aceleração de hardware ativada.
+  </p>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
