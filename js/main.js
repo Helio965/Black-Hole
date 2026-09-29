@@ -8,6 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createBlackHole } from './blackHole.js';
 import { createAccretionDisk } from './accretionDisk.js';
 import { createStarfield } from './stars.js';
+import { detectQualityProfile, createFrameRateGovernor } from './quality.js';
 import { bloomBlendFragment } from './shaders.js';
 
 // ---------------------------------------------------------------------------
@@ -17,15 +18,15 @@ import { bloomBlendFragment } from './shaders.js';
 const SHADOW_RADIUS = 2.6; // ~3√3/2 Rs: apparent size of the shadow
 const DISK_INNER_RADIUS = 3; // innermost stable circular orbit (ISCO)
 const DISK_OUTER_RADIUS = 16;
-const PARTICLE_COUNT = 60000;
-const STAR_COUNT = 1800;
 
-const MAX_PIXEL_RATIO = 2;
 const CAMERA_FOV = 38;
 const CAMERA_ELEVATION = THREE.MathUtils.degToRad(7); // almost edge-on, like the reference
 const BLOOM = { strength: 0.55, radius: 0.25, threshold: 0.7 };
 const MIN_DISTANCE = 9;
 const MAX_DISTANCE = 110;
+
+const quality = detectQualityProfile();
+let maxPixelRatio = quality.maxPixelRatio; // lowered at runtime if the device struggles
 
 const canvas = document.getElementById('scene');
 const renderer = createRenderer(canvas);
@@ -41,7 +42,7 @@ function createRenderer(target) {
       antialias: false, // the composer renders into its own multisampled target
       powerPreference: 'high-performance',
     });
-    instance.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
+    instance.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     instance.setSize(window.innerWidth, window.innerHeight, false);
     instance.setClearColor(0x000000, 1);
     instance.toneMapping = THREE.ACESFilmicToneMapping;
@@ -103,24 +104,31 @@ function start(renderer) {
   const lensUniforms = { uLensStrength: { value: 1 } };
 
   const disk = createAccretionDisk({
-    count: PARTICLE_COUNT,
+    count: quality.particles,
     innerRadius: DISK_INNER_RADIUS,
     outerRadius: DISK_OUTER_RADIUS,
     lensUniforms,
   });
   scene.add(disk.group);
 
-  const stars = createStarfield({ count: STAR_COUNT, lensUniforms });
+  const stars = createStarfield({ count: quality.stars, lensUniforms });
   scene.add(stars.points);
 
   const settings = {
     speed: 1,
+    particles: 1, // fraction of the particle budget
   };
+
+  // The adaptive governor may shrink the budget; the UI picks a fraction of it.
+  let particleBudget = quality.particles;
+  function applyParticleCount() {
+    disk.setVisibleCount(particleBudget * settings.particles);
+  }
 
   // --- Post-processing ----------------------------------------------------------
   const renderTarget = new THREE.WebGLRenderTarget(1, 1, {
     type: THREE.HalfFloatType,
-    samples: 4,
+    samples: quality.msaa,
   });
   const composer = new EffectComposer(renderer, renderTarget);
   composer.addPass(new RenderPass(scene, camera));
@@ -156,7 +164,7 @@ function start(renderer) {
   function onResize() {
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+    const pixelRatio = Math.min(window.devicePixelRatio, maxPixelRatio);
 
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
@@ -170,6 +178,26 @@ function start(renderer) {
   window.addEventListener('resize', onResize);
   onResize();
 
+  // --- Adaptive quality ------------------------------------------------------------
+  // Keep the animation fluid on slower devices: first render fewer pixels,
+  // then draw fewer streaks.
+  const governor = createFrameRateGovernor({
+    onDowngrade(fps) {
+      const currentRatio = Math.min(window.devicePixelRatio, maxPixelRatio);
+      if (currentRatio > 1) {
+        maxPixelRatio = Math.max(1, currentRatio - 0.5);
+        onResize();
+      } else {
+        particleBudget = Math.max(10000, Math.round(particleBudget * 0.65));
+        applyParticleCount();
+      }
+      console.info(
+        `[black-hole] ${fps.toFixed(1)} fps -> pixel ratio ${Math.min(window.devicePixelRatio, maxPixelRatio)}, ` +
+          `${disk.visibleCount} particles`,
+      );
+    },
+  });
+
   // --- Animation loop -------------------------------------------------------------
   const clock = new THREE.Clock();
   let orbitTime = 0;
@@ -177,8 +205,10 @@ function start(renderer) {
 
   function frame() {
     requestAnimationFrame(frame);
+    const rawDelta = clock.getDelta();
+    if (quality.adaptive) governor.tick(rawDelta);
     // Clamp the delta so a background tab does not produce a huge jump.
-    const delta = Math.min(clock.getDelta(), 0.1);
+    const delta = Math.min(rawDelta, 0.1);
 
     // Integrating the speed (instead of time * speed) keeps the motion smooth
     // when the speed control changes.
