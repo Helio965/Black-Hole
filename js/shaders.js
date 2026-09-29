@@ -233,6 +233,12 @@ export const diskVertex = /* glsl */ `
   varying vec3 vColor;
   varying vec2 vStrip;
 
+  // The geometry of a streak stops where its glow becomes negligible: the end
+  // of the tail and the outer part of its width (< ~20% opacity) are never
+  // rasterised. Same look, ~40% fewer blended fragments.
+  const float TAIL_KEPT = 0.8;
+  const float WIDTH_KEPT = 0.75;
+
   // Temperature ramp: dark red -> red -> orange -> yellow -> white.
   vec3 heatColor(float t) {
     vec3 c = mix(vec3(0.22, 0.025, 0.01), vec3(0.78, 0.11, 0.02), smoothstep(0.0, 0.25, t));
@@ -245,14 +251,35 @@ export const diskVertex = /* glsl */ `
   }
 
   void main() {
-    float along = position.x; // 0 = head of the streak, 1 = end of its tail
-    float side = position.y;  // -1 .. 1 across the streak
+    float along = position.x * TAIL_KEPT; // 0 = head of the streak, 1 = end of its (full) tail
+    float side = position.y * WIDTH_KEPT; // -1 .. 1 across the (full) streak
 
     // --- Orbit ------------------------------------------------------------
     // Kepler: angular speed ω ∝ r^-3/2, i.e. linear speed v ∝ 1/√r.
     float radius = aOrbit.x;
     float omega = uKepler * pow(radius, -1.5) * aLook.w;
-    float phi = aOrbit.y + omega * uTime - along * aLook.x;
+    float phiHead = aOrbit.y + omega * uTime;
+
+    // --- Early out ------------------------------------------------------------
+    // Most streaks have no visible secondary image: the ones in front of the
+    // hole have none at all, and the ones beside it get a faint (μ- ~ 0) but
+    // long mirrored image that would still cost a lot of blending. Drop them
+    // before the expensive part of the shader. All the vertices of a streak
+    // take the same decision, based on its head.
+    if (uImageSign < 0.0) {
+      vec3 headView = (viewMatrix * modelMatrix * vec4(radius * cos(phiHead), 0.0, -radius * sin(phiHead), 1.0)).xyz;
+      vec3 holeView = (viewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      float reach = radius * aLook.x + 1.0; // tail length + turbulence, conservative
+      bool inFront = -headView.z < -holeView.z - reach;
+      if (inFront || lensMagnification(headView, holeView, -1.0) < 0.02) {
+        gl_Position = vec4(0.0, 0.0, 2.0, 1.0); // outside the clip volume: nothing is drawn
+        vColor = vec3(0.0);
+        vStrip = vec2(0.0);
+        return;
+      }
+    }
+
+    float phi = phiHead - along * aLook.x;
     float c = cos(phi);
     float s = sin(phi);
 

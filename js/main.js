@@ -158,10 +158,10 @@ function start(renderer) {
   for (const [key, apply] of Object.entries(applySetting)) apply(settings[key]);
 
   // --- Post-processing ----------------------------------------------------------
-  const renderTarget = new THREE.WebGLRenderTarget(1, 1, {
-    type: THREE.HalfFloatType,
-    samples: quality.msaa,
-  });
+  // No MSAA: the streaks are soft and the shadow's edge is smoothed in its own
+  // shader, while multisampling would multiply the memory traffic of the
+  // thousands of additive streaks (the main cost on integrated GPUs).
+  const renderTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
   const composer = new EffectComposer(renderer, renderTarget);
   composer.addPass(new RenderPass(scene, camera));
   // Only the hottest (HDR > threshold) parts of the scene glow.
