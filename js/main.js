@@ -246,8 +246,9 @@ function start(renderer) {
 
     // Integrating the speed (instead of time * speed) keeps the motion smooth
     // when the speed control changes.
+    // Speed 0 pauses the whole disc (orbits and turbulence).
     orbitTime += delta * settings.speed;
-    flowTime += delta * (0.35 + 0.65 * settings.speed);
+    flowTime += delta * settings.speed;
     disk.update(orbitTime, flowTime);
     stars.update(clock.elapsedTime);
 
