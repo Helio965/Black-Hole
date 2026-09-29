@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { diskVertex, diskFragment } from './shaders.js';
+import { mulberry32, gaussian } from './random.js';
 
 const TRAIL_SEGMENTS = 6;      // vertices along each streak (enough to bend it smoothly)
 const KEPLER = 7.5;            // ω = KEPLER / r^1.5 (rad per second at speed 1)
@@ -126,24 +127,4 @@ function createStreakGeometry({ count, innerRadius, outerRadius, seed }) {
   geometry.setAttribute('aLook', new THREE.InstancedBufferAttribute(look, 4));
   geometry.instanceCount = count;
   return geometry;
-}
-
-/** Small seeded PRNG, so the disc looks the same on every load. */
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function next() {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** Standard normal sample (Box-Muller), clamped to keep the disc thin. */
-function gaussian(random) {
-  const u = Math.max(random(), 1e-6);
-  const v = random();
-  const n = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  return THREE.MathUtils.clamp(n, -2.5, 2.5);
 }

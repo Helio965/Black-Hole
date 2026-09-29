@@ -7,6 +7,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { createBlackHole } from './blackHole.js';
 import { createAccretionDisk } from './accretionDisk.js';
+import { createStarfield } from './stars.js';
 import { bloomBlendFragment } from './shaders.js';
 
 // ---------------------------------------------------------------------------
@@ -17,6 +18,7 @@ const SHADOW_RADIUS = 2.6; // ~3√3/2 Rs: apparent size of the shadow
 const DISK_INNER_RADIUS = 3; // innermost stable circular orbit (ISCO)
 const DISK_OUTER_RADIUS = 16;
 const PARTICLE_COUNT = 60000;
+const STAR_COUNT = 1800;
 
 const MAX_PIXEL_RATIO = 2;
 const CAMERA_FOV = 38;
@@ -108,6 +110,9 @@ function start(renderer) {
   });
   scene.add(disk.group);
 
+  const stars = createStarfield({ count: STAR_COUNT, lensUniforms });
+  scene.add(stars.points);
+
   const settings = {
     speed: 1,
   };
@@ -160,6 +165,7 @@ function start(renderer) {
     renderer.setSize(width, height, false);
     composer.setPixelRatio(pixelRatio);
     composer.setSize(width, height);
+    stars.setPixelRatio(pixelRatio);
   }
   window.addEventListener('resize', onResize);
   onResize();
@@ -179,6 +185,7 @@ function start(renderer) {
     orbitTime += delta * settings.speed;
     flowTime += delta * (0.35 + 0.65 * settings.speed);
     disk.update(orbitTime, flowTime);
+    stars.update(clock.elapsedTime);
 
     cameraReset.update(delta);
     controls.update();

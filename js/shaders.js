@@ -170,6 +170,20 @@ export const lensChunk = /* glsl */ `
 
     return vec3((holeDir + dir * theta) * Ds, p.z);
   }
+
+  // Brightness gain of a point source for the same image:
+  // μ± = (u² + 2) / (2u·sqrt(u² + 4)) ± 1/2, with u = β / θE.
+  float lensMagnification(vec3 p, vec3 hole, float imageSign) {
+    float Dl = -hole.z;
+    float Ds = -p.z;
+    float Dls = Ds - Dl;
+    if (Dls <= 0.0 || uLensStrength <= 0.0) return imageSign > 0.0 ? 1.0 : 0.0;
+
+    float thetaE = sqrt(uLensStrength * 2.0 * Dls / (Dl * Ds));
+    float u = max(length(p.xy / Ds - hole.xy / Dl) / thetaE, 1e-3);
+    float mu = (u * u + 2.0) / (2.0 * u * sqrt(u * u + 4.0));
+    return min(mu + 0.5 * imageSign, 12.0);
+  }
 `;
 
 // ---------------------------------------------------------------------------
@@ -278,6 +292,52 @@ export const diskFragment = /* glsl */ `
     float tail = pow(1.0 - strip.x, 1.4);       // fading comet-like tail
     float core = 1.0 - strip.y * strip.y;       // bright centre line
     gl_FragColor = vec4(vColor, head * tail * core * core);
+  }
+`;
+
+// ---------------------------------------------------------------------------
+// Starfield
+// Very faint points far away. They are lensed too: stars behind the hole are
+// pushed around the shadow and brighten near the Einstein ring.
+// ---------------------------------------------------------------------------
+
+export const starVertex = /* glsl */ `
+  ${lensChunk}
+
+  uniform float uTime;
+  uniform float uPixelRatio;
+
+  attribute vec3 aColor;
+  attribute float aSize;
+  attribute float aSeed;
+  attribute float aImage; // +1 primary image, -1 secondary image
+
+  varying vec3 vColor;
+
+  void main() {
+    vec4 view = modelViewMatrix * vec4(position, 1.0);
+    vec3 hole = (viewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+
+    float magnification = lensMagnification(view.xyz, hole, aImage);
+    view.xyz = gravitationalLens(view.xyz, hole, aImage);
+    gl_Position = projectionMatrix * view;
+
+    float twinkle = 0.75 + 0.25 * sin(uTime * (0.4 + 1.6 * aSeed) + aSeed * 60.0);
+    float gain = min(magnification, 5.0);
+    gl_PointSize = max(aSize * uPixelRatio * sqrt(max(gain, 0.3)), 1.0);
+    vColor = aColor * twinkle * gain;
+  }
+`;
+
+export const starFragment = /* glsl */ `
+  uniform float uOpacity;
+
+  varying vec3 vColor;
+
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    float alpha = smoothstep(0.5, 0.0, d);
+    gl_FragColor = vec4(vColor * uOpacity, alpha * alpha);
   }
 `;
 
