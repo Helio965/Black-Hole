@@ -1,9 +1,11 @@
 import * as THREE from 'three';
+import { createBlackHole } from './blackHole.js';
 
 // ---------------------------------------------------------------------------
 // Scene units: 1 unit = 1 Schwarzschild radius (Rs).
 // ---------------------------------------------------------------------------
 
+const SHADOW_RADIUS = 2.6; // ~3√3/2 Rs: apparent size of the shadow
 const MAX_PIXEL_RATIO = 2;
 const CAMERA_FOV = 38;
 const CAMERA_START = new THREE.Vector3(0, 4.2, 34);
@@ -47,6 +49,9 @@ function start(renderer) {
   );
   camera.position.copy(CAMERA_START);
   camera.lookAt(0, 0, 0);
+
+  const blackHole = createBlackHole({ shadowRadius: SHADOW_RADIUS });
+  scene.add(blackHole.group);
 
   function onResize() {
     const width = window.innerWidth;
