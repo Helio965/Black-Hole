@@ -49,20 +49,30 @@ O Three.js é carregado via **importmap** a partir do jsDelivr. Nenhuma outra bi
 
 ## Como executar
 
-Os módulos ES precisam ser servidos por HTTP (abrir o `index.html` com `file://` não funciona). Use qualquer servidor estático, por exemplo:
+> **Dois cliques no `index.html` não funcionam.** Os navegadores bloqueiam módulos JavaScript (ES Modules) em arquivos abertos direto do disco (`file://`): o painel aparece, mas a cena fica preta. Nesse caso a própria página mostra um aviso com as instruções abaixo. O projeto precisa ser aberto por um servidor local (`http://localhost`).
+
+### Windows: dois cliques em `iniciar.bat`
+
+1. Baixe o projeto (*Code → Download ZIP*) e extraia a pasta.
+2. Dê dois cliques em **`iniciar.bat`**.
+3. O navegador abre sozinho em `http://localhost:8000`. Deixe a janela preta aberta enquanto usa o projeto e feche-a para parar.
+
+O `iniciar.bat` roda `tools/servidor.ps1`, um mini servidor em PowerShell, que já vem no Windows, então não é preciso instalar nada. Se o Windows perguntar se pode executar o arquivo baixado, clique em *Mais informações → Executar assim mesmo*.
+
+### Qualquer sistema: um servidor estático
 
 ```bash
 git clone https://github.com/Helio965/Black-Hole.git
 cd Black-Hole
 
-# Python 3 (já vem instalado na maioria dos sistemas)
+# Python 3 (já vem no macOS e na maioria das distribuições Linux)
 python -m http.server 8000
 
 # ou Node.js
 npx serve .
 ```
 
-Depois abra **http://localhost:8000** no navegador (a porta muda se você usar outro servidor).
+Depois abra **http://localhost:8000** no navegador (a porta muda se você usar outro servidor). No VS Code, a extensão *Live Server* também funciona.
 
 Parâmetros opcionais de URL:
 
@@ -89,7 +99,11 @@ Parâmetros opcionais de URL:
 │   └── random.js         # PRNG com semente (a cena é igual em todo carregamento)
 ├── docs/
 │   └── preview.jpg       # imagem usada neste README
+├── tools/
+│   └── servidor.ps1      # mini servidor local em PowerShell (usado pelo iniciar.bat)
+├── iniciar.bat           # Windows: dois cliques para abrir no navegador
 ├── README.md
+├── .gitattributes        # quebras de linha CRLF para os arquivos do Windows
 ├── .gitignore
 └── LICENSE
 ```

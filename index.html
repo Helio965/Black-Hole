@@ -80,6 +80,26 @@
     Tente um navegador atualizado com aceleração de hardware ativada.
   </p>
 
+  <section class="notice" id="file-notice" hidden>
+    <h2 class="notice__title">Abra pelo servidor local</h2>
+    <p>
+      O navegador bloqueia os módulos JavaScript quando o <code>index.html</code>
+      é aberto direto do disco (<code>file://</code>).
+    </p>
+    <ol>
+      <li><strong>Windows:</strong> dê dois cliques em <code>iniciar.bat</code>, na pasta do projeto.</li>
+      <li><strong>Qualquer sistema:</strong> rode <code>python -m http.server 8000</code> na pasta e abra <code>http://localhost:8000</code>.</li>
+    </ol>
+  </section>
+
+  <script>
+    // ES modules never load from file:// — explain it instead of showing a black screen.
+    if (location.protocol === 'file:') {
+      document.getElementById('file-notice').hidden = false;
+      document.getElementById('hint').hidden = true;
+      document.getElementById('controls-toggle').hidden = true;
+    }
+  </script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

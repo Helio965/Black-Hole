@@ -61,6 +61,58 @@ body {
   display: none;
 }
 
+/* Shown when index.html is opened straight from disk (file://). */
+.notice {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 20;
+  width: min(460px, calc(100vw - 2 * var(--gutter)));
+  padding: 22px 24px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.notice[hidden] {
+  display: none;
+}
+
+.notice__title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.notice p,
+.notice ol {
+  margin: 0 0 8px;
+}
+
+.notice ol {
+  padding-left: 18px;
+}
+
+.notice strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.notice code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
 /* ---------------------------------------------------------------------------
    HUD: title + small, collapsible controls panel
    --------------------------------------------------------------------------- */
