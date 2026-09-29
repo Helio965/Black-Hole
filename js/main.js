@@ -9,6 +9,7 @@ import { createBlackHole } from './blackHole.js';
 import { createAccretionDisk } from './accretionDisk.js';
 import { createStarfield } from './stars.js';
 import { detectQualityProfile, createFrameRateGovernor } from './quality.js';
+import { createControlsPanel, setupHint } from './ui.js';
 import { bloomBlendFragment } from './shaders.js';
 
 // ---------------------------------------------------------------------------
@@ -114,9 +115,16 @@ function start(renderer) {
   const stars = createStarfield({ count: quality.stars, lensUniforms });
   scene.add(stars.points);
 
+  // --- Settings (driven by the controls panel) ---------------------------------
+  const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   const settings = {
-    speed: 1,
+    speed: prefersReducedMotion ? 0.35 : 1,
+    intensity: 1,
     particles: 1, // fraction of the particle budget
+    tilt: 0, // degrees
+    lens: 1,
+    doppler: 0.6,
+    stars: true,
   };
 
   // The adaptive governor may shrink the budget; the UI picks a fraction of it.
@@ -124,6 +132,27 @@ function start(renderer) {
   function applyParticleCount() {
     disk.setVisibleCount(particleBudget * settings.particles);
   }
+
+  const applySetting = {
+    speed: () => {}, // read every frame
+    intensity: (v) => {
+      disk.uniforms.uIntensity.value = v;
+      blackHole.uniforms.uIntensity.value = 0.5 + 0.5 * v;
+    },
+    particles: () => applyParticleCount(),
+    tilt: (v) => disk.setTilt(THREE.MathUtils.degToRad(v)),
+    lens: (v) => {
+      lensUniforms.uLensStrength.value = v;
+    },
+    doppler: (v) => {
+      disk.uniforms.uDoppler.value = v;
+      blackHole.uniforms.uDoppler.value = v;
+    },
+    stars: (v) => {
+      stars.points.visible = v;
+    },
+  };
+  for (const [key, apply] of Object.entries(applySetting)) apply(settings[key]);
 
   // --- Post-processing ----------------------------------------------------------
   const renderTarget = new THREE.WebGLRenderTarget(1, 1, {
@@ -225,6 +254,17 @@ function start(renderer) {
 
     composer.render(delta);
   }
+
+  // --- Interface ------------------------------------------------------------------
+  createControlsPanel({
+    values: settings,
+    onChange(key, value) {
+      settings[key] = value;
+      applySetting[key]?.(value);
+    },
+    onResetCamera: () => cameraReset.start(),
+  });
+  setupHint(canvas);
 
   frame();
   canvas.classList.add('is-ready');

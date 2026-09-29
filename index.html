@@ -22,6 +22,59 @@
 <body>
   <canvas id="scene" aria-label="Simulação 3D interativa de um buraco negro"></canvas>
 
+  <aside class="hud" aria-label="Black Hole">
+    <header class="hud__header">
+      <h1 class="hud__title">BLACK HOLE</h1>
+      <p class="hud__subtitle">Interactive WebGL Experiment</p>
+    </header>
+
+    <button class="hud__toggle" id="controls-toggle" type="button" aria-expanded="false" aria-controls="controls">
+      Controles
+      <svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" /></svg>
+    </button>
+
+    <form class="controls" id="controls" hidden>
+      <label class="control">
+        <span class="control__label">Velocidade <output data-output="speed"></output></span>
+        <input type="range" data-setting="speed" min="0" max="3" step="0.05" />
+      </label>
+
+      <label class="control">
+        <span class="control__label">Intensidade <output data-output="intensity"></output></span>
+        <input type="range" data-setting="intensity" min="0.2" max="2.5" step="0.05" />
+      </label>
+
+      <label class="control">
+        <span class="control__label">Partículas <output data-output="particles"></output></span>
+        <input type="range" data-setting="particles" min="0.1" max="1" step="0.05" />
+      </label>
+
+      <label class="control">
+        <span class="control__label">Inclinação do disco <output data-output="tilt"></output></span>
+        <input type="range" data-setting="tilt" min="-30" max="30" step="1" />
+      </label>
+
+      <label class="control">
+        <span class="control__label">Lente gravitacional <output data-output="lens"></output></span>
+        <input type="range" data-setting="lens" min="0" max="2" step="0.05" />
+      </label>
+
+      <label class="control">
+        <span class="control__label">Doppler <output data-output="doppler"></output></span>
+        <input type="range" data-setting="doppler" min="0" max="1" step="0.05" />
+      </label>
+
+      <label class="control control--switch">
+        <span class="control__label">Estrelas</span>
+        <input type="checkbox" data-setting="stars" role="switch" />
+      </label>
+
+      <button class="controls__reset" id="reset-camera" type="button">Resetar câmera</button>
+    </form>
+  </aside>
+
+  <p class="hint" id="hint">Arraste para girar · Role ou use pinça para zoom</p>
+
   <p class="fallback" id="fallback" hidden>
     Seu navegador não conseguiu iniciar o WebGL.<br />
     Tente um navegador atualizado com aceleração de hardware ativada.
