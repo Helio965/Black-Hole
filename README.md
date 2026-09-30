@@ -189,6 +189,7 @@ A unidade da cena é o **raio de Schwarzschild** (`Rs = 1`).
   ```
 
   Cada vértice da fita fica em um ponto ligeiramente anterior da órbita, então os fragmentos viram **trilhas curvas**. A fita é orientada para a câmera em torno da própria direção de movimento.
+- Com zoom perto do disco visto de lado, a câmera fica dentro dele: as trilhas a poucas unidades da câmera são atenuadas para não cobrirem a tela inteira.
 - Por frame, a CPU atualiza apenas alguns *uniforms* (`uTime`, `uFlowTime`...). Nenhuma matriz é recalculada e nenhum objeto é criado dentro do loop.
 - As cores vêm de uma rampa de temperatura (vermelho escuro → vermelho → laranja → amarelo → branco) que depende do raio, do brilho relativo da partícula e do Doppler. A mistura é **aditiva**, em um buffer HDR (half-float).
 
@@ -204,15 +205,21 @@ Com o valor padrão, o lado que se aproxima fica cerca de 1.8× mais brilhante q
 
 ### 4. Lente gravitacional (aproximada)
 
-Aplicada **por vértice**, em espaço de câmera, com a equação da lente fina para uma massa pontual:
+Aplicada em espaço de câmera, com a equação da lente de uma massa pontual, em campo fraco:
 
 ```
-θ± = ( β ± √(β² + 4·θE²) ) / 2        θE² = 2·Rs·Dls / (Dl·Ds)
+θ (θ − β) = θE²        θE² = Rs · c / (Dl · Ds)
 ```
 
-- **Imagem primária (θ+)**: tudo o que está atrás do buraco é empurrado para fora do anel de Einstein. É isso que levanta a parte de trás do disco por cima da sombra.
+`β` é o ângulo entre a fonte e o buraco, `θ` o da imagem, `Dl` e `Ds` as distâncias da câmera ao buraco e à fonte, e `c` mede quanto do caminho da luz passa perto do buraco. A lente fina clássica usa `c = 2·Dls`, que só vale bem atrás do buraco: ela é zero na frente e liga de repente no plano do buraco. Isso deixava um **vinco horizontal** no disco, na altura do centro, visível com a câmera inclinada (~30°). Não era física: era um defeito da aproximação.
+
+Aqui `c` vem da deflexão somada ao longo do raio de luz, `c ≈ √(Dls² + b²) + Dls` (com `b = θ·Dl`, o parâmetro de impacto, e uma pequena correção pela câmera estar a uma distância finita). Ele vale `2·Dls` bem atrás do buraco, `b` ao lado dele e some aos poucos na frente: o mesmo resultado da lente fina onde ela vale, sem descontinuidade.
+
+- **Imagem primária**: tudo o que está atrás do buraco é empurrado para fora do anel de Einstein. É isso que levanta a parte de trás do disco por cima da sombra.
 - **Imagem secundária**: o disco é desenhado uma segunda vez (mesma geometria, outro material), do lado oposto do buraco. Na aproximação de campo fraco, essa imagem cairia quase toda dentro da sombra. Perto de um buraco negro real (campo forte), ela "abraça" a sombra. Por isso ela é desenhada como um **espelho comprimido da imagem primária**, com peso dado pela magnificação `μ−` da lente pontual. O resultado é o arco inferior da imagem de referência.
-- Como cada vértice é lenteado individualmente, as trilhas se curvam e se esticam naturalmente. As estrelas usam as mesmas funções, com o brilho multiplicado pela magnificação.
+- **Trilhas bem atrás do buraco**: ali uma fonte pequena vira um arco em volta do anel de Einstein. Antes, as duas bordas de cada trilha eram lenteadas separadamente e podiam cair em lados opostos do anel. Com o disco visto de lado (0°), isso virava um borrão branco. Agora só a linha central da trilha segue a equação da lente; a largura segue o mapa local da lente (a derivada), com o esticamento limitado a 3×, e a luz cortada pelo limite volta para a trilha (até 3×). Os vértices de cada trilha também são distribuídos pelo **ângulo que ela cobre em volta do buraco**, e não uniformemente ao longo da órbita, para que os arcos saiam curvos em vez de cortados por cordas retas.
+- Visto exatamente de lado, o disco de trás aparece como um anel de arcos concêntricos em volta da sombra, acima e abaixo dela. Isso é o esperado para um disco fino: a luz que passa por cima e por baixo do buraco forma o anel de Einstein.
+- As estrelas usam as mesmas funções, com o brilho multiplicado pela magnificação.
 
 ### 5. Pós-processamento
 
@@ -226,7 +233,7 @@ Aplicada **por vértice**, em espaço de câmera, com a equação da lente fina 
 > **Isto não é uma simulação científica rigorosa de relatividade geral.**
 > É uma representação artística baseada em conceitos visuais associados a buracos negros e discos de acreção.
 
-- Não há *ray tracing* de geodésicas. A lente usa a aproximação de campo fraco (lente fina) e a imagem secundária é um ajuste artístico.
+- Não há *ray tracing* de geodésicas. A lente usa a aproximação de campo fraco (deflexão somada ao longo de um raio reto) e a imagem secundária é um ajuste artístico.
 - O disco é um conjunto de partículas com órbitas keplerianas newtonianas e turbulência procedural, não um fluido magnetizado.
 - O Doppler e as cores seguem as fórmulas certas em espírito, mas com intensidades escolhidas para ficar bonito, não para medir nada.
 - A câmera não sofre efeitos relativísticos (redshift gravitacional, aberração etc.).
@@ -241,6 +248,7 @@ O custo do projeto está quase todo no disco: dezenas de milhares de trilhas sem
 - **Trilhas recortadas**: a geometria termina onde o brilho fica abaixo de ~20%, sem diferença visível (0,5% no brilho médio).
 - **Imagem secundária seletiva**: só as trilhas atrás do buraco, com magnificação relevante, passam pelo resto do shader. As outras são descartadas logo no início.
 - Resultado medido em 1280×720 com 60 000 partículas: **26,1 M → 15,0 M fragmentos por frame (−42%)**. Somando a remoção do MSAA, o trabalho de mistura caiu cerca de **7×**.
+- **Largura das trilhas pelo mapa local da lente**: além de corrigir o disco visto de lado, evita triângulos gigantes atravessando o anel. Com o perfil `ultra`, o disco visto de lado caiu de **143,9 M para 17,0 M fragmentos por frame** e a vista inicial de 18,0 M para 14,4 M.
 - **Perfil pela GPU detectada**:
 
   | GPU | Perfil | Trilhas | Pixel ratio | Detalhe |
