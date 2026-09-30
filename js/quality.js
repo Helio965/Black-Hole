@@ -2,14 +2,16 @@
  * Quality management: pick sensible defaults for the GPU the browser is
  * really using, then lower them at runtime if the frame rate stays too low.
  *
- * `?quality=high|medium|low` in the URL forces a profile and disables the
+ * `?quality=ultra|high|medium|low` in the URL forces a profile and disables the
  * automatic adjustment (useful for screenshots and benchmarks).
  */
 
 const PROFILES = {
-  high: { name: 'high', particles: 60000, stars: 1800, maxPixelRatio: 2 },
-  medium: { name: 'medium', particles: 36000, stars: 1400, maxPixelRatio: 1.25 },
-  low: { name: 'low', particles: 20000, stars: 1000, maxPixelRatio: 1.5 },
+  // Dedicated GPUs have plenty of headroom: more, finer streaks and smoother arcs.
+  ultra: { name: 'ultra', particles: 110000, stars: 2200, maxPixelRatio: 2, segments: 8, streakWidth: 0.72 },
+  high: { name: 'high', particles: 60000, stars: 1800, maxPixelRatio: 2, segments: 6, streakWidth: 1 },
+  medium: { name: 'medium', particles: 36000, stars: 1400, maxPixelRatio: 1.25, segments: 6, streakWidth: 1 },
+  low: { name: 'low', particles: 20000, stars: 1000, maxPixelRatio: 1.5, segments: 6, streakWidth: 1 },
 };
 
 /** @param {{ kind: string }} gpu result of describeGpu() */
@@ -27,6 +29,7 @@ export function detectQualityProfile(gpu) {
   if (coarsePointer && smallScreen) return { ...PROFILES.low, adaptive: true };
   // Integrated laptop GPUs share memory bandwidth with the CPU.
   if (gpu.kind === 'integrated') return { ...PROFILES.medium, adaptive: true };
+  if (gpu.kind === 'discrete') return { ...PROFILES.ultra, adaptive: true };
   return { ...PROFILES.high, adaptive: true };
 }
 

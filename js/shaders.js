@@ -161,7 +161,7 @@ export const lensChunk = /* glsl */ `
   uniform float uLensStrength; // 0 = no lensing, 1 = weak-field point lens (Rs = 1)
   uniform float uShadowRadius; // radius of the black sphere, in world units
 
-  const float SECONDARY_SQUASH = 0.6;
+  const float SECONDARY_SQUASH = 0.75;
 
   vec3 gravitationalLens(vec3 p, vec3 hole, float imageSign) {
     float Dl = -hole.z; // camera -> hole
@@ -288,9 +288,11 @@ export const diskVertex = /* glsl */ `
     // --- Turbulence ---------------------------------------------------------
     // A slowly drifting noise field lifts the streaks out of the plane and
     // makes them slightly wavy.
-    float thickness = 0.025 + 0.014 * radius;
+    // Thin disc: the lens turns small height differences into large radial
+    // ones in the arcs, so a thick disc makes the lensed streaks criss-cross.
+    float thickness = 0.016 + 0.008 * radius;
     float turbulence = snoise(vec3(local.xz * 0.23, uFlowTime * 0.15));
-    local.y = (aOrbit.z * 0.55 + 0.8 * turbulence) * thickness;
+    local.y = (aOrbit.z * 0.55 + 0.6 * turbulence) * thickness;
     local.xz *= 1.0 + 0.012 * turbulence;
 
     vec3 world = (modelMatrix * vec4(local, 1.0)).xyz;
@@ -325,7 +327,11 @@ export const diskVertex = /* glsl */ `
     heat *= mix(0.55, 1.0, aOrbit.w);                 // dimmer streaks are cooler (redder)
     heat = clamp(heat * mix(1.0, delta, 0.7), 0.0, 1.0); // Doppler: approaching side is hotter
 
-    vColor = heatColor(heat) * aLook.z * beaming * imageWeight * uIntensity * uBrightnessScale;
+    // Spiral density waves: a two-armed trailing pattern that turns slower than
+    // the gas flowing through it, so the rotation reads even in dense regions.
+    float spiral = 0.8 + 0.2 * sin(2.0 * phi + 7.0 * log(radius) - uFlowTime * 0.3);
+
+    vColor = heatColor(heat) * aLook.z * spiral * beaming * imageWeight * uIntensity * uBrightnessScale;
     vStrip = vec2(along, side);
   }
 `;

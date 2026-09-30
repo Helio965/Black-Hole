@@ -108,7 +108,7 @@ function start(renderer) {
     intensity: 1,
     particles: 1, // fraction of the particle budget
     tilt: 0, // degrees
-    lens: 1.3, // 1 = weak-field point lens; a bit more looks closer to strong-field renders
+    lens: 1.45, // 1 = weak-field point lens; a bit more looks closer to strong-field renders
     doppler: 0.6,
     stars: true,
   };
@@ -128,6 +128,8 @@ function start(renderer) {
     innerRadius: DISK_INNER_RADIUS,
     outerRadius: DISK_OUTER_RADIUS,
     lensUniforms,
+    segments: quality.segments,
+    streakWidth: quality.streakWidth,
   });
   scene.add(disk.group);
 
