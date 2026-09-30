@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { diskVertex, diskFragment } from './shaders.js';
 import { mulberry32, gaussian } from './random.js';
 
-const TRAIL_SEGMENTS = 6;      // vertices along each streak (enough to bend it smoothly)
 const KEPLER = 7.5;            // ω = KEPLER / r^1.5 (rad per second at speed 1)
 const REFERENCE_COUNT = 60000; // brightness is tuned for this many streaks
 const DISK_EXPOSURE = 0.5;     // overall brightness of a single streak (HDR units)
@@ -14,9 +13,21 @@ const DISK_EXPOSURE = 0.5;     // overall brightness of a single streak (HDR uni
  * numbers per instance (radius, start angle, height, size, brightness...).
  * The vertex shader turns those numbers into an orbit, so the CPU only updates
  * a handful of uniforms per frame, no matter how many streaks are drawn.
+ *
+ * @param {object} options
+ * @param {number} options.segments    ribbon segments per streak (more = smoother lensed arcs)
+ * @param {number} options.streakWidth width multiplier (finer streaks = more detail)
  */
-export function createAccretionDisk({ count, innerRadius, outerRadius, lensUniforms, seed = 1337 }) {
-  const geometry = createStreakGeometry({ count, innerRadius, outerRadius, seed });
+export function createAccretionDisk({
+  count,
+  innerRadius,
+  outerRadius,
+  lensUniforms,
+  segments = 6,
+  streakWidth = 1,
+  seed = 1337,
+}) {
+  const geometry = createStreakGeometry({ count, innerRadius, outerRadius, segments, streakWidth, seed });
 
   // Shared by both lens images (uniform objects are shared by reference).
   const uniforms = {
@@ -35,8 +46,8 @@ export function createAccretionDisk({ count, innerRadius, outerRadius, lensUnifo
   group.name = 'AccretionDisk';
 
   // The same streaks are drawn twice: once where they appear directly
-  // (primary image) and once as the faint mirrored arc produced by light that
-  // goes around the other side of the hole (secondary image).
+  // (primary image) and once as the mirrored arc produced by light that goes
+  // around the other side of the hole (secondary image).
   for (const [name, imageSign] of [['PrimaryImage', 1], ['SecondaryImage', -1]]) {
     const material = new THREE.ShaderMaterial({
       uniforms: { ...uniforms, uImageSign: { value: imageSign } },
@@ -80,17 +91,17 @@ export function createAccretionDisk({ count, innerRadius, outerRadius, lensUnifo
   };
 }
 
-function createStreakGeometry({ count, innerRadius, outerRadius, seed }) {
+function createStreakGeometry({ count, innerRadius, outerRadius, segments, streakWidth, seed }) {
   const geometry = new THREE.InstancedBufferGeometry();
 
   // Base ribbon: pairs of vertices along the streak.
   // position.x = 0 at the head .. 1 at the tail, position.y = -1 / +1 across.
   const positions = [];
   const indices = [];
-  for (let i = 0; i <= TRAIL_SEGMENTS; i++) {
-    const t = i / TRAIL_SEGMENTS;
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
     positions.push(t, -1, 0, t, 1, 0);
-    if (i < TRAIL_SEGMENTS) {
+    if (i < segments) {
       const a = i * 2;
       indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
     }
@@ -108,8 +119,10 @@ function createStreakGeometry({ count, innerRadius, outerRadius, seed }) {
 
     // Brightness: steep radial fall-off, concentric bands and a few hot spots.
     const radial = Math.pow(innerRadius / radius, 1.4);
+    // Two harmonics: broad rings plus fine "grooves", like the reference image.
     const wave = 0.5 + 0.5 * Math.sin(radius * 4.1 + 1.3 * Math.sin(radius * 1.7));
-    const bands = 0.15 + 0.85 * wave * wave;
+    const groove = 0.5 + 0.5 * Math.sin(radius * 13.7 + 2.1 * Math.sin(radius * 0.9));
+    const bands = 0.12 + 0.88 * (0.65 * wave * wave + 0.35 * groove * groove);
     const spark = 0.35 + 0.65 * Math.pow(random(), 2);
     const innerEdge = THREE.MathUtils.smoothstep(radius, innerRadius, innerRadius + 0.35);
 
@@ -119,7 +132,7 @@ function createStreakGeometry({ count, innerRadius, outerRadius, seed }) {
     orbit[i * 4 + 3] = bands * spark; // relative glow: dimmer streaks are also cooler
 
     look[i * 4 + 0] = (0.12 + 0.33 * random()) * (0.75 + 0.25 * Math.sqrt(innerRadius / radius));
-    look[i * 4 + 1] = (0.018 + 0.042 * random()) * (0.6 + 0.05 * radius);
+    look[i * 4 + 1] = (0.018 + 0.042 * random()) * (0.6 + 0.05 * radius) * streakWidth;
     look[i * 4 + 2] = DISK_EXPOSURE * radial * bands * spark * (0.25 + 0.75 * innerEdge);
     look[i * 4 + 3] = 0.94 + 0.12 * random();
   }

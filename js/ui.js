@@ -59,6 +59,85 @@ export function createControlsPanel({ values, onChange, onResetCamera }) {
   document.getElementById('reset-camera').addEventListener('click', onResetCamera);
 }
 
+const HELP_DISMISSED_KEY = 'black-hole:gpu-help-dismissed';
+
+/**
+ * Shows which GPU the browser renders with, plus the live frame rate. When it
+ * is an integrated GPU or the CPU, a small card explains how to switch the
+ * browser to the dedicated graphics card (it opens once, then on demand).
+ */
+export function createPerformanceStatus(gpu) {
+  const line = document.getElementById('gpu-status');
+  const fps = document.getElementById('fps-value');
+  const help = document.getElementById('gpu-help');
+  const openButton = document.getElementById('gpu-help-open');
+
+  // "NVIDIA GeForce RTX 3050 Laptop GPU" -> "GeForce RTX 3050 Laptop GPU"
+  const shortName = gpu.name
+    .replace(/^NVIDIA (?=GeForce|Quadro|RTX)/, '')
+    .replace(/\((R|TM)\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  line.dataset.kind = gpu.kind;
+  line.title = gpu.raw || gpu.name;
+  document.getElementById('gpu-name').textContent = shortName;
+
+  const needsHelp = gpu.kind === 'integrated' || gpu.kind === 'software';
+  if (needsHelp) {
+    help.dataset.kind = gpu.kind;
+    for (const el of help.querySelectorAll('.js-gpu-name')) el.textContent = gpu.name;
+    if (gpu.kind === 'software') {
+      document.getElementById('gpu-help-title').textContent = 'Ative a aceleração de hardware';
+    }
+
+    const setOpen = (open) => {
+      help.hidden = !open;
+      openButton.hidden = open;
+    };
+    openButton.addEventListener('click', () => setOpen(true));
+    document.getElementById('gpu-help-close').addEventListener('click', () => {
+      setOpen(false);
+      remember(HELP_DISMISSED_KEY, gpu.raw);
+    });
+    for (const button of help.querySelectorAll('[data-copy]')) {
+      button.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(button.dataset.copy);
+          button.textContent = 'copiado';
+        } catch {
+          button.textContent = 'copie o texto';
+        }
+        setTimeout(() => (button.textContent = 'copiar'), 1800);
+      });
+    }
+    // Open it by itself the first time this GPU is seen.
+    setOpen(recall(HELP_DISMISSED_KEY) !== gpu.raw);
+  }
+
+  return {
+    setFps(value) {
+      fps.textContent = `${Math.round(value)} FPS`;
+    },
+  };
+}
+
+// localStorage can be unavailable (private mode, blocked storage): never fail.
+function remember(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
+
+function recall(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 /** Fades the "drag to rotate" hint after the first interaction (or a while). */
 export function setupHint(target) {
   const hint = document.getElementById('hint');

@@ -21,10 +21,11 @@ Tudo roda no navegador, direto de arquivos estáticos: não há `npm install`, b
 
 - **Horizonte de eventos** totalmente preto, que nenhuma luz revela.
 - **Photon ring** fino e brilhante com aura quente (branco → amarelo → laranja → vermelho).
-- **Disco de acreção com ~60 000 fragmentos** (24 000 em celulares) desenhados em uma única geometria instanciada.
+- **Disco de acreção com até 110 000 fragmentos** em placas dedicadas (60 000 no perfil alto, 36 000 em GPUs integradas, 20 000 em celulares), desenhados em uma única geometria instanciada.
 - **Órbitas keplerianas**: fragmentos internos giram muito mais rápido que os externos (`ω ∝ r^-3/2`).
 - **Turbulência procedural** com *simplex noise*, que tira o disco do plano e ondula as trilhas.
 - **Temperatura por raio**: branco/amarelo perto do centro, laranja no meio e vermelho escuro nas bordas. As trilhas "esfriam" (ficam mais vermelhas) enquanto desaparecem.
+- **Anéis e sulcos concêntricos** (dois harmônicos de brilho) e **ondas espirais de densidade**: um padrão de dois braços que gira mais devagar que o gás e deixa a rotação visível mesmo nas regiões densas.
 - **Doppler relativístico aproximado**: o lado que vem em direção à câmera fica mais claro e quente, e o lado oposto mais escuro e avermelhado.
 - **Lente gravitacional aproximada**: o disco de trás se curva por cima da sombra e forma um arco secundário por baixo. As estrelas do fundo também são lenteadas.
 - **Campo de estrelas discreto**, com leve paralaxe e cintilação.
@@ -32,7 +33,8 @@ Tudo roda no navegador, direto de arquivos estáticos: não há `npm install`, b
 - **OrbitControls** com inércia, zoom limitado (a câmera nunca entra no buraco) e reset animado.
 - **Painel de controles minimalista**: velocidade, intensidade, partículas, inclinação, lente, Doppler e estrelas.
 - **Responsivo**: ocupa 100% da janela, sem scrollbars, e funciona com toque no celular.
-- **Qualidade adaptativa**: reduz a resolução e depois as partículas se o FPS cair.
+- **Qualidade adaptativa**: escolhe o perfil pela GPU que o navegador está usando e, se o FPS cair, reduz a resolução e depois as partículas.
+- **Diagnóstico de GPU**: o painel mostra qual placa de vídeo está renderizando e o FPS ao vivo. Se for a GPU integrada ou a CPU, aparece o passo a passo para usar a placa dedicada.
 
 ## Tecnologias utilizadas
 
@@ -55,9 +57,17 @@ O Three.js é carregado via **importmap** a partir do jsDelivr. Nenhuma outra bi
 
 1. Baixe o projeto (*Code → Download ZIP*) e extraia a pasta.
 2. Dê dois cliques em **`iniciar.bat`**.
-3. O navegador abre sozinho em `http://localhost:8000`. Deixe a janela preta aberta enquanto usa o projeto e feche-a para parar.
+3. Na primeira vez, a janela preta pergunta se pode configurar o Windows para usar a **placa de vídeo de alto desempenho** no navegador. Aperte **Enter** (sim) ou digite `n`.
+4. O projeto abre numa janela própria do Chrome (ou Edge), já pedindo a placa dedicada. Deixe a janela preta aberta enquanto usa o projeto e feche-a para parar.
 
 O `iniciar.bat` roda `tools/servidor.ps1`, um mini servidor em PowerShell, que já vem no Windows, então não é preciso instalar nada. Se o Windows perguntar se pode executar o arquivo baixado, clique em *Mais informações → Executar assim mesmo*.
+
+Sobre a placa de vídeo, o iniciador faz duas coisas:
+
+- **Abre o projeto numa janela separada do Chrome/Edge**, com perfil próprio em `%LOCALAPPDATA%\BlackHole` e a opção `--force-high-performance-gpu`. Por ser outra instância do navegador, isso funciona mesmo com o seu Chrome já aberto e não mexe nas suas abas nem no seu perfil.
+- **Se você aceitar**, grava a preferência "Alto desempenho" do Windows para o navegador. É exatamente o que a tela *Configurações → Sistema → Tela → Elementos gráficos* faz, e pode ser desfeito por lá. Se responder `n`, ele não pergunta de novo.
+
+Para abrir no navegador padrão, numa aba comum, rode `powershell -ExecutionPolicy Bypass -File tools\servidor.ps1 -DefaultBrowser`.
 
 ### Qualquer sistema: um servidor estático
 
@@ -78,8 +88,34 @@ Parâmetros opcionais de URL:
 
 | URL | Efeito |
 | --- | --- |
-| `?quality=high` | Força a qualidade máxima e desliga o ajuste automático |
+| `?quality=ultra` | Força o perfil das placas dedicadas (110 000 trilhas mais finas) e desliga o ajuste automático |
+| `?quality=high` | Força o perfil alto (60 000 trilhas) e desliga o ajuste automático |
+| `?quality=medium` | Força o perfil médio (o mesmo usado em GPUs integradas) |
 | `?quality=low` | Força o perfil leve (o mesmo usado em celulares) |
+
+## Travando? Use a placa de vídeo dedicada
+
+O WebGL sempre desenha na placa de vídeo, mas **quem escolhe qual placa é o Windows/navegador**, não a página. A página só pode pedir a mais rápida (`powerPreference: 'high-performance'`, que este projeto já usa). Em notebooks com duas placas (por exemplo Intel/AMD integrada + NVIDIA RTX), o Windows costuma entregar ao navegador a **integrada**, que é bem mais fraca. Se a aceleração de hardware estiver desligada, a cena é desenhada na **CPU** e trava de vez.
+
+O painel, no canto superior esquerdo, mostra qual está em uso:
+
+| Indicador | Significado |
+| --- | --- |
+| 🟢 `GeForce RTX 3050 Laptop GPU · 60 FPS` | placa dedicada, tudo certo |
+| 🟠 `Intel UHD Graphics` / `AMD Radeon Graphics` | GPU integrada: siga os passos abaixo |
+| 🔴 `CPU (sem aceleração de hardware)` | sem aceleração: siga os passos abaixo, começando pelo 1 |
+
+**Jeito mais fácil (Windows):** abra pelo `iniciar.bat` e aceite a pergunta sobre a placa de vídeo (veja [Como executar](#como-executar)). Ele configura tudo e abre o projeto numa janela que já pede a NVIDIA.
+
+Para configurar o seu Chrome manualmente (no Edge é igual, trocando `chrome://` por `edge://`):
+
+1. No Chrome, abra **Configurações → Sistema** e ligue **Usar aceleração de gráficos quando disponível**.
+2. No Windows 10/11, abra **Configurações → Sistema → Tela → Elementos gráficos**, escolha o **Google Chrome** (se não aparecer, adicione em *Procurar* → `C:\Program Files\Google\Chrome\Application\chrome.exe`), clique em **Opções → Alto desempenho (NVIDIA ...)** e em **Salvar**.
+3. Alternativa: abra `chrome://flags/#force-high-performance-gpu`, mude para **Enabled** e clique em **Relaunch**.
+4. Alternativa pelo driver: **Painel de Controle da NVIDIA → Gerenciar as configurações em 3D → Configurações de programa → Google Chrome → Processador gráfico preferencial: Processador NVIDIA de alto desempenho**.
+5. Deixe o notebook **na tomada** (na bateria o Windows e o Chrome economizam energia e podem limitar o FPS) e **feche e abra o navegador de novo**. A escolha da placa só vale para um navegador recém-aberto.
+
+Para conferir, veja o ponto verde no painel ou abra `chrome://gpu` e procure o nome da NVIDIA em *GL_RENDERER*.
 
 ## Estrutura do projeto
 
@@ -94,8 +130,9 @@ Parâmetros opcionais de URL:
 │   ├── accretionDisk.js  # geometria instanciada do disco e atributos por partícula
 │   ├── stars.js          # campo de estrelas (THREE.Points)
 │   ├── shaders.js        # todos os shaders GLSL (noise, lente, disco, anel, estrelas)
-│   ├── quality.js        # perfil por dispositivo e governador de FPS
-│   ├── ui.js             # painel de controles e dica de interação
+│   ├── gpu.js            # descobre qual placa de vídeo o navegador está usando
+│   ├── quality.js        # perfil por GPU/dispositivo e governador de FPS
+│   ├── ui.js             # painel de controles, status da GPU/FPS e dicas
 │   └── random.js         # PRNG com semente (a cena é igual em todo carregamento)
 ├── docs/
 │   └── preview.jpg       # imagem usada neste README
@@ -124,7 +161,7 @@ Opções do painel:
 | Intensidade | 0.2 – 2.5 | Brilho do disco e do photon ring |
 | Partículas | 10 – 100% | Quantos fragmentos são desenhados |
 | Inclinação do disco | −30° – +30° | Inclina o disco em torno do eixo X |
-| Lente gravitacional | 0 – 2 | 0 desliga a curvatura da luz; 1 é a lente fraca "física"; o padrão é 1.3 |
+| Lente gravitacional | 0 – 2 | 0 desliga a curvatura da luz; 1 é a lente fraca "física"; o padrão é 1.45 |
 | Doppler | 0 – 1 | Intensidade do efeito Doppler/beaming |
 | Estrelas | on/off | Mostra ou esconde o fundo estrelado |
 | Resetar câmera | — | Volta suavemente para a vista inicial |
@@ -142,7 +179,7 @@ A unidade da cena é o **raio de Schwarzschild** (`Rs = 1`).
 
 ### 2. Disco de acreção
 
-- Uma única `InstancedBufferGeometry` contém uma fita pequena (7 × 2 vértices) e, para cada instância, 8 números: raio, ângulo inicial, altura, brilho relativo, comprimento da trilha, largura, brilho e variação de velocidade.
+- Uma única `InstancedBufferGeometry` contém uma fita pequena (7 × 2 vértices) e, para cada instância, 8 números: raio, ângulo inicial, altura, brilho relativo, comprimento da trilha, largura, brilho e variação de velocidade. A fita só cobre a parte da trilha que realmente brilha: a ponta da cauda e as bordas, quase transparentes, nem são rasterizadas.
 - O **vertex shader** calcula a órbita inteira na GPU:
 
   ```
@@ -196,11 +233,25 @@ Aplicada **por vértice**, em espaço de câmera, com a equação da lente fina 
 
 ## Performance
 
+O custo do projeto está quase todo no disco: dezenas de milhares de trilhas semitransparentes somadas umas sobre as outras (*overdraw* aditivo). Por isso a otimização mira o número de pixels misturados por frame:
+
 - **1 draw call por imagem do disco** (primária + secundária), independentemente do número de partículas, via geometria instanciada.
 - Toda a animação acontece na GPU; o loop só atualiza *uniforms*.
-- `renderer.setPixelRatio(Math.min(devicePixelRatio, 2))`, reduzido para 1.5 em celulares.
-- **Perfil por dispositivo**: desktop com 60 000 partículas, 1 800 estrelas e MSAA 4×; celular com 24 000 partículas, 1 000 estrelas e sem MSAA.
-- **Governador de FPS**: se a média ficar abaixo de ~45 FPS, primeiro reduz a resolução interna e depois a quantidade de partículas (até 4 passos). Os ajustes aparecem no console (`console.info`).
+- **Sem MSAA**: as trilhas são suaves e a borda da sombra é suavizada no próprio shader. O MSAA 4× multiplicava por 4 a escrita de cada fragmento no buffer HDR.
+- **Trilhas recortadas**: a geometria termina onde o brilho fica abaixo de ~20%, sem diferença visível (0,5% no brilho médio).
+- **Imagem secundária seletiva**: só as trilhas atrás do buraco, com magnificação relevante, passam pelo resto do shader. As outras são descartadas logo no início.
+- Resultado medido em 1280×720 com 60 000 partículas: **26,1 M → 15,0 M fragmentos por frame (−42%)**. Somando a remoção do MSAA, o trabalho de mistura caiu cerca de **7×**.
+- **Perfil pela GPU detectada**:
+
+  | GPU | Perfil | Trilhas | Pixel ratio | Detalhe |
+  | --- | --- | --- | --- | --- |
+  | dedicada (NVIDIA/AMD RX) | `ultra` | 110 000, mais finas | até 2 | 8 segmentos por trilha (arcos mais suaves) |
+  | desconhecida (desktop) | `high` | 60 000 | até 2 | 6 segmentos |
+  | integrada (Intel/AMD) | `medium` | 36 000 | até 1.25 | 6 segmentos |
+  | celular / CPU | `low` | 20 000 | até 1.5 / 1 | 6 segmentos |
+
+  O ultra custa 18,0 M fragmentos por frame em 1280×720 (+20% sobre o alto), muito abaixo do que uma RTX 3050 Laptop aguenta a 60 FPS.
+- **Governador de FPS**: se a média ficar abaixo de ~45 FPS, reduz primeiro a resolução interna e depois a quantidade de partículas (até 5 passos, reagindo em ~3 s). Os ajustes aparecem no console (`console.info`).
 - O relógio é limitado a 0.1 s por frame, então voltar de uma aba em segundo plano não causa saltos.
 
 ## Licença
