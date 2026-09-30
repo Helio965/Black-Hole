@@ -135,23 +135,30 @@ export const noiseChunk = /* glsl */ `
 `;
 
 // ---------------------------------------------------------------------------
-// Gravitational lensing (thin point-mass lens, weak-field approximation)
+// Gravitational lensing (point mass, weak-field approximation)
 //
-// Works in view space. For a source point behind the hole, its angular offset
-// from the hole (β) is mapped to the two images predicted by the lens equation:
+// Works in view space. A source seen at angle β from the hole appears at the
+// angle θ that solves the lens equation
 //
-//     θ± = ( β ± sqrt(β² + 4·θE²) ) / 2        θE² = 2·Rs·Dls / (Dl·Ds)
+//     θ (θ - β) = θE²        θE² = Rs · path / (Dl · Ds)
 //
-//   θ+ : primary image, pushed outwards, beyond the Einstein ring
-//        -> the far side of the disc is lifted over the top of the shadow.
-//   θ- : secondary image, on the opposite side of the hole
-//        -> the arc that wraps under the shadow.
+// where Dl and Ds are the distances camera -> hole and camera -> source, and
+// `path` measures how much of the hole's pull the light feels on its way. The
+// classic thin lens uses path = 2·Dls (Dls = Ds - Dl), which is only valid far
+// behind the hole and switches on abruptly at its plane: the disc used to show
+// a crease there. Integrating the deflection along the straight ray instead
+// gives a smooth path that is ~2·Dls far behind the hole, b beside it and fades
+// out in front of it (b = θ·Dl, the impact parameter of the ray).
 //
-// The weak-field θ- would hide most of the secondary image inside the shadow.
-// Close to a real black hole (strong field) it hugs the shadow instead, so the
-// secondary image is drawn as a compressed mirror of the primary one, weighted
-// by the point-lens magnification μ- (see lensMagnification). Artistic, but it
-// reproduces the look of the classic renders.
+//   primary image   : θ > β, pushed outwards
+//                     -> the far side of the disc is lifted over the shadow.
+//   secondary image : on the opposite side of the hole
+//                     -> the arc that wraps under the shadow.
+//
+// The weak-field secondary image would hide inside the shadow. Close to a real
+// black hole (strong field) it hugs the shadow instead, so it is drawn as a
+// compressed mirror of the primary image, weighted by the point-lens
+// magnification μ-. Artistic, but it reproduces the look of the classic renders.
 //
 // Every vertex is lensed on its own, so streaks bend and stretch naturally.
 // Surface brightness is conserved by lensing, so colours are left untouched.
@@ -163,44 +170,70 @@ export const lensChunk = /* glsl */ `
 
   const float SECONDARY_SQUASH = 0.75;
 
-  vec3 gravitationalLens(vec3 p, vec3 hole, float imageSign) {
-    float Dl = -hole.z; // camera -> hole
-    float Ds = -p.z;    // camera -> source
+  struct Lens {
+    vec2 hole;        // angular position of the hole (view-space xy / distance)
+    vec2 dir;         // unit direction, on the sky, from the hole towards the source
+    float beta;       // angular distance hole -> source
+    float theta;      // angular distance hole -> primary image
+    float einstein2;  // θE² of the source
+    float Ds;
+    bool bends;       // false when there is nothing to bend
+  };
+
+  float einsteinTerm(float Dl, float Ds, float theta) {
+    float b = theta * Dl;
     float Dls = Ds - Dl;
+    float root = sqrt(Dls * Dls + b * b);
+    // path = root + Dls, written to stay accurate in front of the hole too. The
+    // last term accounts for the camera sitting at a finite distance.
+    float path = (Dls >= 0.0 ? root + Dls : b * b / (root - Dls)) - b * b * (Dl + Ds) / (2.0 * Dl * Dl);
+    return uLensStrength * max(path, 0.0) / (Dl * Ds);
+  }
 
-    if (Dls <= 0.0) {
-      // In front of the hole nothing is bent. There is no secondary image
-      // either: tuck it right behind the centre, where the shadow hides it.
-      return imageSign > 0.0 ? p : hole * 1.02;
+  Lens solveLens(vec3 p, vec3 hole) {
+    Lens lens;
+    float Dl = -hole.z;
+    lens.Ds = -p.z;
+    lens.hole = hole.xy / Dl;
+    lens.bends = uLensStrength > 0.0 && lens.Ds > 1e-3 && Dl > 1e-3;
+    vec2 beta = p.xy / max(lens.Ds, 1e-3) - lens.hole;
+    lens.beta = length(beta);
+    lens.dir = lens.beta > 1e-6 ? beta / lens.beta : vec2(0.0, 1.0);
+    lens.theta = lens.beta;
+    lens.einstein2 = 0.0;
+    if (!lens.bends) return lens;
+
+    // θE² barely depends on θ: a few fixed-point steps converge.
+    for (int i = 0; i < 3; i++) {
+      lens.einstein2 = einsteinTerm(Dl, lens.Ds, lens.theta);
+      lens.theta = 0.5 * (lens.beta + sqrt(lens.beta * lens.beta + 4.0 * lens.einstein2));
     }
+    return lens;
+  }
 
-    vec2 holeDir = hole.xy / Dl;
-    vec2 beta = p.xy / Ds - holeDir;
-    float b = length(beta);
-    float thetaE2 = uLensStrength * 2.0 * Dls / (Dl * Ds);
-    float theta = 0.5 * (b + sqrt(b * b + 4.0 * thetaE2)); // primary image
+  // Signed angular distance hole -> image (< 0: opposite side of the hole).
+  float imageTheta(Lens lens, float imageSign, float Dl) {
+    if (imageSign > 0.0) return lens.theta;
+    // Compressed mirror of the primary image, starting at the shadow's edge.
+    float thetaShadow = uShadowRadius / sqrt(max(Dl * Dl - uShadowRadius * uShadowRadius, 1e-4));
+    return -(thetaShadow + SECONDARY_SQUASH * (lens.theta - thetaShadow));
+  }
 
-    if (imageSign < 0.0) {
-      // Compressed mirror of the primary image, starting at the shadow's edge.
-      float thetaShadow = uShadowRadius / sqrt(max(Dl * Dl - uShadowRadius * uShadowRadius, 1e-4));
-      theta = -(thetaShadow + SECONDARY_SQUASH * (theta - thetaShadow));
+  vec3 gravitationalLens(vec3 p, vec3 hole, float imageSign) {
+    Lens lens = solveLens(p, hole);
+    if (!lens.bends) {
+      return imageSign > 0.0 ? p : hole * 1.02; // no secondary image: hide it behind the hole
     }
-
-    vec2 dir = b > 1e-6 ? beta / b : vec2(0.0, 1.0);
-
-    return vec3((holeDir + dir * theta) * Ds, p.z);
+    float theta = imageTheta(lens, imageSign, -hole.z);
+    return vec3((lens.hole + lens.dir * theta) * lens.Ds, p.z);
   }
 
   // Brightness gain of a point source for the same image:
   // μ± = (u² + 2) / (2u·sqrt(u² + 4)) ± 1/2, with u = β / θE.
   float lensMagnification(vec3 p, vec3 hole, float imageSign) {
-    float Dl = -hole.z;
-    float Ds = -p.z;
-    float Dls = Ds - Dl;
-    if (Dls <= 0.0 || uLensStrength <= 0.0) return imageSign > 0.0 ? 1.0 : 0.0;
-
-    float thetaE = sqrt(uLensStrength * 2.0 * Dls / (Dl * Ds));
-    float u = max(length(p.xy / Ds - hole.xy / Dl) / thetaE, 1e-3);
+    Lens lens = solveLens(p, hole);
+    if (!lens.bends || lens.einstein2 <= 0.0) return imageSign > 0.0 ? 1.0 : 0.0;
+    float u = max(lens.beta / sqrt(lens.einstein2), 1e-3);
     float mu = (u * u + 2.0) / (2.0 * u * sqrt(u * u + 4.0));
     return min(mu + 0.5 * imageSign, 12.0);
   }
@@ -261,8 +294,8 @@ export const diskVertex = /* glsl */ `
     float phiHead = aOrbit.y + omega * uTime;
 
     // --- Early out ------------------------------------------------------------
-    // Most streaks have no visible secondary image: the ones in front of the
-    // hole have none at all, and the ones beside it get a faint (μ- ~ 0) but
+    // Most streaks have no visible secondary image: the ones well in front of
+    // the hole have practically none, and the ones beside it get a faint (μ- ~ 0) but
     // long mirrored image that would still cost a lot of blending. Drop them
     // before the expensive part of the shader. All the vertices of a streak
     // take the same decision, based on its head.
